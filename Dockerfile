@@ -7,7 +7,7 @@ ARG OVERLAY_WS=/opt/ros/overlay_ws
 WORKDIR $OVERLAY_WS/src
 
 RUN sudo apt-get update && apt-get install python3-pip python3-vcstool git -y
-RUN vcs import --input https://raw.githubusercontent.com/cram2/pycram/dev/pycram-https.rosinstall --recursive --skip-existing $OVERLAY_WS/src
+RUN vcs import --input https://raw.githubusercontent.com/maltehue/pycram/stretch/pycram-https.rosinstall --recursive --skip-existing $OVERLAY_WS/src
 RUN sudo apt-get update && apt-get install python3-pip -y && pip3 install pip --upgrade
 RUN pip3 install --no-cache-dir -r $OVERLAY_WS/src/pycram/requirements.txt
 

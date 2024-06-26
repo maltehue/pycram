@@ -9,8 +9,8 @@ repositories:
     version: master
   pycram:
     type: git
-    url: https://github.com/cram2/pycram.git
-    version: dev
+    url: https://github.com/maltehue/pycram.git
+    version: stretch
   pr2_common:
     type: git
     url: https://@github.com/PR2/pr2_common.git
@@ -23,3 +23,15 @@ repositories:
     type: git
     url: https://github.com/PR2/pr2_kinematics.git
     version: kinetic-devel
+    stretch_ros:
+    type: git
+    url: https://github.com/hello-robot/stretch_ros.git
+    version: noetic
+  giskardpy:
+    type: git
+    url: https://github.com/SemRoCo/giskardpy.git
+    version: stretch
+  giskard_msgs:
+    type: git
+    url: https://github.com/SemRoCo/giskard_msgs.git
+    version: devel
