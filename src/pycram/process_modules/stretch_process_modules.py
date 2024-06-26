@@ -9,6 +9,7 @@ from .default_process_modules import *
 from ..datastructures.world import World
 from ..designators.motion_designator import *
 from ..external_interfaces.ik import request_giskard_ik
+from ..external_interfaces.giskard import init_giskard_interface
 
 
 class StretchNavigate(DefaultNavigation):
@@ -39,7 +40,7 @@ class StretchMoveHead(ProcessModule):
         current_tilt = robot.get_joint_position("joint_head_tilt")
 
         robot.set_joint_position("joint_head_pan", new_pan + current_pan)
-        robot.set_joint_position("joint_head_tilt", new_tilt + current_tilt)
+        robot.set_joint_position("joint_head_tilt", new_tilt )
 
 
 class StretchMoveGripper(DefaultMoveGripper):
@@ -148,6 +149,7 @@ class StretchNavigationReal(ProcessModule):
         giskard.achieve_cartesian_goal(designator.target, robot_description.base_link, "map")
 
 
+@init_giskard_interface
 class StretchMoveHeadReal(ProcessModule):
     """
     Process module for the real robot to move that such that it looks at the given position. Uses the same calculation
@@ -156,22 +158,24 @@ class StretchMoveHeadReal(ProcessModule):
 
     def _execute(self, desig: LookingMotion):
         target = desig.target
-        robot = World.robot
 
         local_transformer = LocalTransformer()
-        pose_in_pan = local_transformer.transform_pose(target, robot.get_link_tf_frame("head_pan_link"))
-        pose_in_tilt = local_transformer.transform_pose(target, robot.get_link_tf_frame("head_tilt_link"))
+        goal_point = local_transformer.transform_pose(target, 'map')
 
-        new_pan = np.arctan2(pose_in_pan.position.y, pose_in_pan.position.x)
-        new_tilt = np.arctan2(-pose_in_tilt.position.y,
-                              pose_in_tilt.position.z ** 2 + pose_in_tilt.position.x ** 2) * -1
 
-        current_pan = robot.get_joint_position("joint_head_pan")
-        current_tilt = robot.get_joint_position("joint_head_tilt")
-
-        giskard.avoid_all_collisions()
-        giskard.achieve_joint_goal({"head_pan_joint": new_pan + current_pan,
-                                    "head_tilt_joint": new_tilt + current_tilt})
+        giskard.giskard_wrapper.allow_all_collisions()
+        from geometry_msgs.msg import Vector3Stamped, PointStamped
+        pointing_axis = Vector3Stamped()
+        pointing_axis.header.frame_id = 'link_head_tilt'
+        pointing_axis.vector.x = 1
+        goal = PointStamped()
+        goal.header.frame_id = 'map'
+        goal.point = goal_point.pose.position
+        giskard.giskard_wrapper.set_pointing_goal(goal_point=goal,
+                                                  tip_link='link_head_tilt',
+                                                  pointing_axis=pointing_axis,
+                                                  root_link='link_head')
+        giskard.giskard_wrapper.execute()
 
 
 class StretchDetectingReal(ProcessModule):

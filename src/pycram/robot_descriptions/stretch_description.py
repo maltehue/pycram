@@ -50,16 +50,16 @@ class StretchDescription(RobotDescription):
                                           gripper_description=arm_gripper_desc)
         self.add_chains({"arm": arm_desc, "right": arm_desc, "left": arm_desc})
 
-        arm_park = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        arm_park = [1.1, 0.0, 0.0, 0.1, 0.0, -0.14, 0.0, 0.0]
         self.add_static_joint_chain("arm", "park", arm_park)
 
-        gripper_confs = {"open": [0.59, 0.59], "close": [0.0, 0.0]}
+        gripper_confs = {"open": [0.59, 0.59], "close": [-0.2, -0.2]}
         self.add_static_gripper_chains("arm", gripper_confs)
 
         self.grasps = GraspingDescription({"front": [0, 0, 0, 1],
                                            "left": [0, 0, -1, 1],
                                            "right": [0, 0, 1, 1],
-                                           "top": [0, 1, 0, 1]})
+                                           "top": [0, 0.6755902, 0, 0.7372773]})
 
     def get_camera_frame(self, name="color"):
         return super().get_camera_frame(name)

@@ -136,11 +136,13 @@ def sync_worlds() -> None:
             joint_config = obj.get_positions_of_all_joints()
             non_fixed_joints = list(filter(lambda joint: joint.type != JointType.FIXED, obj.joints.values()))
             joint_config_filtered = {joint.name: joint_config[joint.name] for joint in non_fixed_joints}
-
-            giskard_wrapper.motion_goals.set_seed_configuration(joint_config_filtered,
-                                                                robot_description.name)
-            giskard_wrapper.motion_goals.set_seed_odometry(_pose_to_pose_stamped(obj.get_pose()),
-                                                           robot_description.name)
+            giskard_wrapper.allow_all_collisions()
+            giskard_wrapper.monitors.add_set_seed_configuration(joint_config_filtered,
+                                                                #robot_description.name
+                                                                )
+            giskard_wrapper.monitors.add_set_seed_odometry(_pose_to_pose_stamped(obj.get_pose()),
+                                                           #robot_description.name
+                                                           )
 
     giskard_object_names = set(giskard_wrapper.get_group_names())
     robot_name = {robot_description.name}

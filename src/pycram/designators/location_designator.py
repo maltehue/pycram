@@ -164,7 +164,7 @@ class CostmapLocation(LocationDesignatorDescription):
         ground_pose = Pose(target_pose.position_as_list())
         ground_pose.position.z = 0
 
-        occupancy = OccupancyCostmap(0.32, False, 200, 0.02, ground_pose)
+        occupancy = OccupancyCostmap(0.6, False, 200, 0.02, ground_pose)
         final_map = occupancy
 
         if self.reachable_for:
@@ -179,7 +179,7 @@ class CostmapLocation(LocationDesignatorDescription):
             test_robot = World.current_world.get_prospection_object_for_object(robot_object)
 
         with UseProspectionWorld():
-            for maybe_pose in PoseGenerator(final_map, number_of_samples=600):
+            for maybe_pose in PoseGenerator(final_map, number_of_samples=30):
                 res = True
                 arms = None
                 if self.visible_for:
