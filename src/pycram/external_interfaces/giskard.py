@@ -21,7 +21,7 @@ from threading import Lock, RLock
 try:
     from giskardpy.python_interface.old_python_interface import OldGiskardWrapper as GiskardWrapper
     from giskard_msgs.msg import WorldBody, MoveResult, CollisionEntry
-    from giskard_msgs.srv import UpdateWorldRequest, UpdateWorld, UpdateWorldResponse, RegisterGroupResponse
+    #from giskard_msgs.srv import UpdateWorld, UpdateWorldResponse, RegisterGroupResponse
 except ModuleNotFoundError as e:
     rospy.logwarn("Failed to import Giskard messages, the real robot will not be available")
 
@@ -79,7 +79,7 @@ def init_giskard_interface(func: Callable) -> Callable:
 
         if "/giskard" in rosnode.get_node_names():
             giskard_wrapper = GiskardWrapper()
-            giskard_update_service = rospy.ServiceProxy("/giskard/update_world", UpdateWorld)
+            # giskard_update_service = rospy.ServiceProxy("/giskard/update_world", UpdateWorld)
             rospy.loginfo_once("Successfully initialized Giskard interface")
             is_init = True
         else:
@@ -152,7 +152,7 @@ def sync_worlds() -> None:
 
 
 @init_giskard_interface
-def update_pose(object: Object) -> 'UpdateWorldResponse':
+def update_pose(object: Object):# -> 'UpdateWorldResponse':
     """
     Sends an update message to giskard to update the object position. Might not work when working on the real robot just
     in standalone mode.
@@ -180,7 +180,7 @@ def spawn_object(object: Object) -> None:
 
 
 @init_giskard_interface
-def remove_object(object: Object) -> 'UpdateWorldResponse':
+def remove_object(object: Object):# -> 'UpdateWorldResponse':
     """
     Removes an object from the giskard belief state.
 
@@ -190,7 +190,7 @@ def remove_object(object: Object) -> 'UpdateWorldResponse':
 
 
 @init_giskard_interface
-def spawn_urdf(name: str, urdf_path: str, pose: Pose) -> 'UpdateWorldResponse':
+def spawn_urdf(name: str, urdf_path: str, pose: Pose):# -> 'UpdateWorldResponse':
     """
     Spawns an URDF in giskard's belief state.
 
@@ -207,7 +207,7 @@ def spawn_urdf(name: str, urdf_path: str, pose: Pose) -> 'UpdateWorldResponse':
 
 
 @init_giskard_interface
-def spawn_mesh(name: str, path: str, pose: Pose) -> 'UpdateWorldResponse':
+def spawn_mesh(name: str, path: str, pose: Pose):# -> 'UpdateWorldResponse':
     """
     Spawns a mesh into giskard's belief state
 
