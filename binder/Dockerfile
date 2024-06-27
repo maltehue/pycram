@@ -9,6 +9,7 @@ RUN vcs import --input pycram/binder/pycram-http.rosinstall --recursive
 
 RUN pip install --requirement ${PYCRAM_WS}/src/pycram/binder/requirements.txt --user
 RUN pip install --requirement ${PYCRAM_WS}/src/giskardpy/requirements.txt --user
+RUN pip install pydot
 
 COPY --chown=${NB_USER}:users binder/me ${PYCRAM_WS}/src/me
 
