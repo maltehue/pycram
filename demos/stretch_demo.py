@@ -10,6 +10,7 @@ import faulthandler
 from pycram.process_module import simulated_robot, with_simulated_robot
 
 world = BulletWorld(WorldMode.GUI)
+apartment = Object("apartment", ObjectType.ENVIRONMENT, "apartment.urdf")
 stretch = Object("stretch", ObjectType.ROBOT, "stretch.urdf")
 stretch_designator = ObjectDesignatorDescription(names=['stretch']).resolve()
 table = Object("table", ObjectType.GENERIC_OBJECT, "big_table.stl", pose=Pose([14.55, 1.05, 0.35], [0, 0, 0, 1]))
@@ -17,11 +18,11 @@ table = Object("table", ObjectType.GENERIC_OBJECT, "big_table.stl", pose=Pose([1
 # r = RobotStateUpdater("/tf", "/joint_states")
 lt = LocalTransformer()
 
-coffee_table = Object("cofee_table", ObjectType.GENERIC_OBJECT, "coffee_table.stl",
-                      pose=Pose([12.75, 3.55, 0], [0, 0, 1, 1]))
-armchair = Object("armchair", ObjectType.GENERIC_OBJECT, "armchair_lowres.stl",
-                  pose=Pose([14.1, 3.45, 0.355], [0, 0, -1, 1]))
-sofa = Object("sofa", ObjectType.GENERIC_OBJECT, "sofa_lowres.stl", pose=Pose([12.8, 4.75, 0.355], [0, 0, 0, 1]))
+# coffee_table = Object("cofee_table", ObjectType.GENERIC_OBJECT, "coffee_table.stl",
+#                       pose=Pose([12.75, 3.55, 0], [0, 0, 1, 1]))
+# armchair = Object("armchair", ObjectType.GENERIC_OBJECT, "armchair_lowres.stl",
+#                   pose=Pose([14.1, 3.45, 0.355], [0, 0, -1, 1]))
+# sofa = Object("sofa", ObjectType.GENERIC_OBJECT, "sofa_lowres.stl", pose=Pose([12.8, 4.75, 0.355], [0, 0, 0, 1]))
 bowl = Object("bowl", ObjectType.BOWL, "bowl.stl", pose=Pose([14.04, 1.35, 0.75]),
               color=Color(1, 0, 0, 1))
 cup1 = Object("cup1", ObjectType.JEROEN_CUP, "jeroen_cup.stl", pose=Pose([15.0, 1.15, 0.71]),
