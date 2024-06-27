@@ -40,7 +40,7 @@ class StretchMoveHead(ProcessModule):
         current_tilt = robot.get_joint_position("joint_head_tilt")
 
         robot.set_joint_position("joint_head_pan", new_pan + current_pan)
-        robot.set_joint_position("joint_head_tilt", new_tilt )
+        robot.set_joint_position("joint_head_tilt", new_tilt + current_tilt)
 
 
 class StretchMoveGripper(DefaultMoveGripper):
