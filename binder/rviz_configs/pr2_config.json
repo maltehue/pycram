@@ -65,6 +65,14 @@
         "topic": "/pycram/viz_marker"
       },
       "type": "markerArray"
+    },
+    {
+      "isShown": true,
+      "name": "Marker array",
+      "options": {
+        "topic": "/giskard/visualization_marker_array"
+      },
+      "type": "markerArray"
     }
 
   
