@@ -239,7 +239,7 @@ def request_giskard_ik(target_pose: Pose, robot: Object, gripper: str) -> Tuple[
         tip_pose = prospection_robot.get_link_pose(gripper)
         dist = tip_pose.dist(target_map)
 
-        if dist > 0.51:
+        if dist > 0.21:
             raise IKError(target_pose, "map")
         return pose, robot_joint_states
 

@@ -8,9 +8,12 @@ from scipy.spatial import distance
 import traceback
 import faulthandler
 from pycram.process_module import simulated_robot, with_simulated_robot
+from pycram.ros.viz_marker_publisher import VizMarkerPublisher
+
 
 world = BulletWorld(WorldMode.GUI)
-apartment = Object("apartment", ObjectType.ENVIRONMENT, "apartment.urdf")
+viz = VizMarkerPublisher()
+# apartment = Object("apartment", ObjectType.ENVIRONMENT, "apartment.urdf")
 stretch = Object("stretch", ObjectType.ROBOT, "stretch.urdf")
 stretch_designator = ObjectDesignatorDescription(names=['stretch']).resolve()
 table = Object("table", ObjectType.GENERIC_OBJECT, "big_table.stl", pose=Pose([14.55, 1.05, 0.35], [0, 0, 0, 1]))
@@ -18,14 +21,16 @@ table = Object("table", ObjectType.GENERIC_OBJECT, "big_table.stl", pose=Pose([1
 # r = RobotStateUpdater("/tf", "/joint_states")
 lt = LocalTransformer()
 
-# coffee_table = Object("cofee_table", ObjectType.GENERIC_OBJECT, "coffee_table.stl",
-#                       pose=Pose([12.75, 3.55, 0], [0, 0, 1, 1]))
-# armchair = Object("armchair", ObjectType.GENERIC_OBJECT, "armchair_lowres.stl",
-#                   pose=Pose([14.1, 3.45, 0.355], [0, 0, -1, 1]))
-# sofa = Object("sofa", ObjectType.GENERIC_OBJECT, "sofa_lowres.stl", pose=Pose([12.8, 4.75, 0.355], [0, 0, 0, 1]))
+coffee_table = Object("cofee_table", ObjectType.GENERIC_OBJECT, "coffee_table.stl",
+                      pose=Pose([12.75, 3.55, 0], [0, 0, 1, 1]))
+armchair = Object("armchair", ObjectType.GENERIC_OBJECT, "armchair_lowres.stl",
+                  pose=Pose([14.1, 3.45, 0.355], [0, 0, -1, 1]))
+sofa = Object("sofa", ObjectType.GENERIC_OBJECT, "sofa_lowres.stl", pose=Pose([12.8, 4.75, 0.355], [0, 0, 0, 1]))
 bowl = Object("bowl", ObjectType.BOWL, "bowl.stl", pose=Pose([14.04, 1.35, 0.75]),
               color=Color(1, 0, 0, 1))
 cup1 = Object("cup1", ObjectType.JEROEN_CUP, "jeroen_cup.stl", pose=Pose([15.0, 1.15, 0.71]),
+              color=Color(0, 0, 1, 1))
+cup2 = Object("cup2", ObjectType.JEROEN_CUP, "jeroen_cup.stl", pose=Pose([13.9, 1.2, 0.71]),
               color=Color(0, 0, 1, 1))
 cup_yellow = Object("cup_yellow", ObjectType.YELLOW_CUP, "jeroen_cup.stl", pose=Pose([13.9, 1.3, 0.71]),
               color=Color(0, 0, 1, 1))
@@ -35,7 +40,7 @@ spoon = Object("spoon", ObjectType.SPOON, "spoon.stl", pose=Pose([14.15, 1.32, 0
 # change coordinates according to new environment
 # looking = LookAtAction([Pose([13.95, 1.3, 0.83])])
 # looking_spoon = LookAtAction([Pose([14.15, 1.3, 0.83])])
-looking_cup = LookAtAction([Pose([15.0, 1.25, 0.75])])
+looking_cup = LookAtAction([Pose([15.1, 1.25, 0.75])])
 looking = LookAtAction([Pose([14.0, 1.35, 0.86])])
 looking_spoon = LookAtAction([Pose([14.3, 1.35, 0.83])])
 looking_spoon_table_2 = LookAtAction([Pose([14.9, 1.25, 0.7])])
@@ -45,7 +50,7 @@ retrieve_arm_fully = MoveJointsMotion(["joint_arm_l1", "joint_arm_l2", "joint_ar
                                       [0., 0., 0., 0., 1.1])
 
 # change coordinates according to new environment
-navigate_to_table_1 = NavigateAction([Pose([13.65, 1.75, 0.0], [0.000, 0.000, 0.0, 1.000])])
+navigate_to_table_1 = NavigateAction([Pose([13.65, 1.95, 0.0], [0.0, 0.0, 0.0, 1.0])])
 navigate_to_table_1_spoon = NavigateAction([Pose([14.2, 1.73, 0.0], [0.000, 0.000, 0.0, 1.000])])
 navigate_to_table_2 = NavigateAction([Pose([14.5, 1.75, 0.0], [0, 0, 0.0, 1.000])])
 navigate_to_table_2_spoon = NavigateAction([Pose([14.75, 1.73, 0.0], [0, 0, 0.0, 1.000])])
@@ -418,7 +423,10 @@ with simulated_robot:
     # Moves the robot arm to a pre-pickup position (in front ir above object)
     def move_tcp(obj_type, obj, task):
         if obj_type == 'yellow_cup':
-            MoveTCPMotion(target=Pose([obj.pose.position.x + 0.04, obj.pose.position.y + 0.15, obj.pose.position.z],
+            world.add_vis_axis(obj.pose)
+            world.add_vis_axis(Pose([obj.pose.position.x, obj.pose.position.y + 0.1, obj.pose.position.z + 0.1],
+                                      get_grasp_orientation_front()))
+            MoveTCPMotion(target=Pose([obj.pose.position.x, obj.pose.position.y + 0.1, obj.pose.position.z + 0.1],
                                       get_grasp_orientation_front()), arm='arm',
                           allow_gripper_collision=True).perform()
         elif obj_type == 'bowl':
@@ -498,7 +506,7 @@ with simulated_robot:
             move_tcp(obj_type, obj, task)
             # For the cup we need front grasp
             if obj_type == 'yellow_cup':
-                PickUpAction(obj_designator, ["arm"], ["front"]).resolve().perform()
+                PickUpAction(obj, ["arm"], ["front"]).resolve().perform()
 
             # For the other objects we use top grasp
             else:
@@ -571,7 +579,7 @@ with simulated_robot:
                             continue
                         except PerceptionObjectNotFound as e:
                             print('was picked')
-                            return obj_designator
+                            return obj
                         break
 
                 # If the detected object is outside the tolerance, we exit the loop, the pickup was successful
@@ -637,9 +645,9 @@ with simulated_robot:
                     except (NameError, TypeError, AttributeError):
                         continue
                     break
-                x_offset = -0.15
-                y_offset = 0.12
-                z_offset = 0.03
+                x_offset = -0.24
+                y_offset = 0.04
+                z_offset = 0.0
                 PlaceAction(obj_desig, [Pose([bowl.pose.position.x + x_offset, bowl.pose.position.y + y_offset,
                                               bowl.pose.position.z + z_offset], [0, 0, -0.7071068, 0.7071068])],
                             ["arm"]).resolve().perform()
@@ -654,7 +662,7 @@ with simulated_robot:
             else:
                 x_offset = -0.25
                 y_offset = 0.11
-                z_offset = 0.09
+                z_offset = 0.0
 
             # Error handling for not detecting cup
             while True:
@@ -664,7 +672,7 @@ with simulated_robot:
                     continue
                 break
             PlaceAction(obj_desig, [Pose([cup.pose.position.x + x_offset, cup.pose.position.y + y_offset,
-                                          cup.pose.position.z + z_offset], [0, 0, -0.7071068, 0.7071068])],
+                                          cup.pose.position.z + z_offset], [0, 0, 0, 1])],
                         ["arm"]).resolve().perform()
 
         # Plan for setting the table
@@ -710,11 +718,11 @@ with simulated_robot:
                     except (NameError, TypeError, AttributeError):
                         continue
                     break
-                x_offset = 0.25
-                y_offset = 0.05
-                z_offset = 0.1
+                x_offset = 0
+                y_offset = 0.1
+                z_offset = 0.0
                 PlaceAction(obj_desig, [Pose([cup.pose.position.x + x_offset, cup.pose.position.y + y_offset,
-                                              cup.pose.position.z + z_offset], [0, 0, -0.7071068, 0.7071068])],
+                                              cup.pose.position.z + z_offset], [0, 0, 0, 1])],
                             ["arm"]).resolve().perform()
 
 
@@ -733,13 +741,13 @@ with simulated_robot:
                 obj.pose.orientation.w = 1#0.7071068
             else:
                 obj = DetectingMotion(ObjectType.JEROEN_CUP).perform()
-                obj.pose.position.x -= 0.16
-                obj.pose.position.y += 0.0
-                obj.pose.position.z += 0.12
+                # obj.pose.position.x -= 0.16
+                # obj.pose.position.y += 0.0
+                # obj.pose.position.z += 0.12
                 obj.pose.orientation.x = 0
                 obj.pose.orientation.y = 0
-                obj.pose.orientation.z = -0.7071068
-                obj.pose.orientation.w = 0.7071068
+                obj.pose.orientation.z = 0#-0.7071068
+                obj.pose.orientation.w = 1#0.7071068
 
 
 
@@ -754,13 +762,13 @@ with simulated_robot:
                 obj.pose.orientation.z = 0#-0.7071068
                 obj.pose.orientation.w = 1#0.7071068
             else:
-                obj.pose.position.x -= 0.14
-                obj.pose.position.y += 0.07
-                obj.pose.position.z += 0.12
+                # obj.pose.position.x -= 0.14
+                # obj.pose.position.y += 0.07
+                # obj.pose.position.z += 0.12
                 obj.pose.orientation.x = 0
                 obj.pose.orientation.y = 0
-                obj.pose.orientation.z = -0.7071068
-                obj.pose.orientation.w = 0.7071068
+                obj.pose.orientation.z = 0#-0.7071068
+                obj.pose.orientation.w = 1#0.7071068
 
 
         elif obj_type == "spoon":
@@ -774,13 +782,13 @@ with simulated_robot:
                 obj.pose.orientation.z = 0#-0.7071068
                 obj.pose.orientation.w = 1#0.7071068
             else:
-                obj.pose.position.x -= 0.1
-                obj.pose.position.y += 0.02
-                obj.pose.position.z += 0.105
+                # obj.pose.position.x -= 0.1
+                # obj.pose.position.y += 0.02
+                # obj.pose.position.z += 0.105
                 obj.pose.orientation.x = 0
                 obj.pose.orientation.y = 0
-                obj.pose.orientation.z = -0.7071068
-                obj.pose.orientation.w = 0.7071068
+                obj.pose.orientation.z = 0#-0.7071068
+                obj.pose.orientation.w = 1#0.7071068
 
 
 
@@ -792,16 +800,16 @@ with simulated_robot:
                 # obj.pose.position.z += 0.12
                 obj.pose.orientation.x = 0
                 obj.pose.orientation.y = 0
-                obj.pose.orientation.z = 0#-0.7071068
-                obj.pose.orientation.w = 1#0.7071068
-            else:
-                obj.pose.position.x -= 0.11
-                obj.pose.position.y += 0.03
-                obj.pose.position.z += 0.12
-                obj.pose.orientation.x = 0
-                obj.pose.orientation.y = 0
                 obj.pose.orientation.z = -0.7071068
                 obj.pose.orientation.w = 0.7071068
+            else:
+                # obj.pose.position.x -= 0.11
+                # obj.pose.position.y += 0.03
+                # obj.pose.position.z += 0.12
+                obj.pose.orientation.x = 0
+                obj.pose.orientation.y = 0
+                obj.pose.orientation.z = 0#-0.7071068
+                obj.pose.orientation.w = 1#0.7071068
 
         return obj
 
@@ -825,8 +833,8 @@ with simulated_robot:
     faulthandler.enable()
 
     while True:
-        pick_and_place('bowl', "clean")
-        # pick_and_place('yellow_cup', "clean")
+        # pick_and_place('bowl', "clean")
+        pick_and_place('yellow_cup', "clean")
         pick_and_place('spoon', "clean")
 
         pick_and_place('yellow_cup', "set")

@@ -16,7 +16,11 @@ class StretchNavigate(DefaultNavigation):
     """
     Process module for the simulated Stretch that sends a cartesian goal to the robot to move the robot base
     """
-    pass
+
+    def _execute(self, desig: MoveMotion):
+        robot = World.robot
+        robot.set_pose(desig.target, base=True)
+
 
 
 class StretchMoveHead(ProcessModule):
@@ -30,16 +34,17 @@ class StretchMoveHead(ProcessModule):
 
         local_transformer = LocalTransformer()
         pose_in_pan = local_transformer.transform_pose(target, robot.get_link_tf_frame("link_head_pan"))
-        pose_in_tilt = local_transformer.transform_pose(target, robot.get_link_tf_frame("link_head_tilt"))
 
         new_pan = np.arctan2(pose_in_pan.position.y, pose_in_pan.position.x)
-        new_tilt = np.arctan2(-pose_in_tilt.position.y,
-                              pose_in_tilt.position.z ** 2 + pose_in_tilt.position.x ** 2) * -1
 
         current_pan = robot.get_joint_position("joint_head_pan")
-        current_tilt = robot.get_joint_position("joint_head_tilt")
 
         robot.set_joint_position("joint_head_pan", new_pan + current_pan)
+
+        pose_in_tilt = local_transformer.transform_pose(target, robot.get_link_tf_frame("link_head_tilt"))
+        new_tilt = np.arctan2(-pose_in_tilt.position.y,
+                              np.sqrt(pose_in_tilt.position.z ** 2 + pose_in_tilt.position.x ** 2)) * -1
+        current_tilt = robot.get_joint_position("joint_head_tilt")
         robot.set_joint_position("joint_head_tilt", new_tilt + current_tilt)
 
 

@@ -518,7 +518,15 @@ def projection_cartesian_goal(goal_pose: Pose, tip_link: str, root_link: str) ->
     :return: MoveResult message for this goal
     """
     sync_worlds()
-    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
+    giskard_wrapper.set_straight_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link,)
+    q = QuaternionStamped()
+    q.header.frame_id = 'map'
+    # lt = LocalTransformer()
+    q.quaternion.w = 1
+
+    # giskard_wrapper.set_rotation_goal(q, tip_link='base_link',
+    #                                           root_link='map', add_monitor=False)
+    # giskard_wrapper.allow_all_collisions()
     return giskard_wrapper.projection()
 
 
