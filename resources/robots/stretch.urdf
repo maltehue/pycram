@@ -243,8 +243,15 @@
   <!--<xacro:include filename="stretch_gripper_with_puller.xacro" />-->
   <!--<xacro:include filename="stretch_dry_erase_marker.xacro" />-->
   <link name="base_link">
+  <!--
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.087526 -0.001626 0.081009"/>
+      <mass value="17.384389"/>
+      <inertia ixx="0.160002" ixy="0.006758" ixz="0.004621" iyy="0.138068" iyz="0.002208" izz="0.228992"/>
+    </inertial>
+    -->
     <visual>
-      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="package://stretch_description/meshes/base_link.STL"/>
       </geometry>
@@ -253,7 +260,7 @@
       </material>
     </visual>
     <collision>
-      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="package://stretch_description/meshes/base_link.STL"/>
       </geometry>
