@@ -36,7 +36,6 @@ class StretchMoveHead(ProcessModule):
         pose_in_pan = local_transformer.transform_pose(target, robot.get_link_tf_frame("link_head_pan"))
 
         new_pan = np.arctan2(pose_in_pan.position.y, pose_in_pan.position.x)
-
         current_pan = robot.get_joint_position("joint_head_pan")
 
         robot.set_joint_position("joint_head_pan", new_pan + current_pan)
@@ -45,6 +44,7 @@ class StretchMoveHead(ProcessModule):
         new_tilt = np.arctan2(-pose_in_tilt.position.y,
                               np.sqrt(pose_in_tilt.position.z ** 2 + pose_in_tilt.position.x ** 2)) * -1
         current_tilt = robot.get_joint_position("joint_head_tilt")
+
         robot.set_joint_position("joint_head_tilt", new_tilt + current_tilt)
 
 
@@ -286,7 +286,7 @@ class StretchCloseReal(ProcessModule):
 
 class StretchManager(ProcessModuleManager):
     def __init__(self):
-        super().__init__("stretch")
+        super().__init__("stretch_description")
         self._navigate_lock = Lock()
         self._looking_lock = Lock()
         self._detecting_lock = Lock()

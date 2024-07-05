@@ -6,7 +6,7 @@ import rospy
 import sys
 import rosnode
 
-from ..datastructures.enums import JointType
+from ..datastructures.enums import JointType, ObjectType
 from ..datastructures.pose import Pose
 from ..robot_descriptions import robot_description
 from ..datastructures.world import World
@@ -130,20 +130,17 @@ def sync_worlds() -> None:
     add_gripper_groups()
     world_object_names = set()
     for obj in World.current_world.objects:
-        if obj.name != robot_description.name and len(obj.link_name_to_id) != 1:
+        if obj.name != robot_description.name and obj.obj_type != ObjectType.ROBOT and len(obj.link_name_to_id) != 1:
             world_object_names.add(obj.name)
-        if obj.name == robot_description.name:
+        if obj.name == robot_description.name or obj.obj_type == ObjectType.ROBOT:
             joint_config = obj.get_positions_of_all_joints()
             non_fixed_joints = list(filter(lambda joint: joint.type != JointType.FIXED, obj.joints.values()))
             joint_config_filtered = {joint.name: joint_config[joint.name] for joint in non_fixed_joints}
-            giskard_wrapper.allow_all_collisions()
-            giskard_wrapper.monitors.add_set_seed_configuration(joint_config_filtered,
-                                                                #robot_description.name
-                                                                )
-            giskard_wrapper.monitors.add_set_seed_odometry(_pose_to_pose_stamped(obj.get_pose()),
-                                                           #robot_description.name
-                                                           )
 
+            giskard_wrapper.monitors.add_set_seed_configuration(joint_config_filtered,
+                                                                robot_description.name)
+            giskard_wrapper.monitors.add_set_seed_odometry(_pose_to_pose_stamped(obj.get_pose()),
+                                                           robot_description.name)
     giskard_object_names = set(giskard_wrapper.get_group_names())
     robot_name = {robot_description.name}
     if not world_object_names.union(robot_name).issubset(giskard_object_names):
@@ -518,15 +515,7 @@ def projection_cartesian_goal(goal_pose: Pose, tip_link: str, root_link: str) ->
     :return: MoveResult message for this goal
     """
     sync_worlds()
-    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link,)
-    q = QuaternionStamped()
-    q.header.frame_id = 'map'
-    # lt = LocalTransformer()
-    q.quaternion.w = 1
-
-    # giskard_wrapper.set_rotation_goal(q, tip_link='base_link',
-    #                                           root_link='map', add_monitor=False)
-    # giskard_wrapper.allow_all_collisions()
+    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
     return giskard_wrapper.projection()
 
 
@@ -607,7 +596,6 @@ def add_gripper_groups() -> None:
         for name in giskard_wrapper.get_group_names():
             if "gripper" in name:
                 return
-
         for name, description in robot_description.chains.items():
             if isinstance(description, ManipulatorDescription):
                 root_link = robot_description.chains[name].gripper.links[-1]
