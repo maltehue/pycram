@@ -14,7 +14,7 @@ from pycram.ros.viz_marker_publisher import VizMarkerPublisher
 world = BulletWorld(WorldMode.GUI)
 viz = VizMarkerPublisher()
 # apartment = Object("apartment", ObjectType.ENVIRONMENT, "apartment.urdf")
-stretch = Object("stretch", ObjectType.ROBOT, "stretch.urdf")
+stretch = Object("stretch", ObjectType.ROBOT, "stretch_description.urdf")
 stretch_designator = ObjectDesignatorDescription(names=['stretch']).resolve()
 table = Object("table", ObjectType.GENERIC_OBJECT, "big_table.stl", pose=Pose([14.55, 1.05, 0.35], [0, 0, 0, 1]))
 
