@@ -645,7 +645,7 @@ with simulated_robot:
                     except (NameError, TypeError, AttributeError):
                         continue
                     break
-                x_offset = -0.24
+                x_offset = -0.15
                 y_offset = 0.04
                 z_offset = 0.0
                 PlaceAction(obj_desig, [Pose([bowl.pose.position.x + x_offset, bowl.pose.position.y + y_offset,
@@ -660,8 +660,8 @@ with simulated_robot:
                 z_offset = 0.03#0.08
 
             else:
-                x_offset = -0.25
-                y_offset = 0.11
+                x_offset = -0.15
+                y_offset = -0.03
                 z_offset = 0.0
 
             # Error handling for not detecting cup
@@ -833,7 +833,7 @@ with simulated_robot:
     faulthandler.enable()
 
     while True:
-        # pick_and_place('bowl', "clean")
+        pick_and_place('bowl', "clean")
         pick_and_place('yellow_cup', "clean")
         pick_and_place('spoon', "clean")
 

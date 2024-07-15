@@ -16,10 +16,10 @@ class StretchNavigate(DefaultNavigation):
     """
     Process module for the simulated Stretch that sends a cartesian goal to the robot to move the robot base
     """
-
-    def _execute(self, desig: MoveMotion):
-        robot = World.robot
-        robot.set_pose(desig.target, base=True)
+    pass
+    # def _execute(self, desig: MoveMotion):
+    #     robot = World.robot
+    #     robot.set_pose(desig.target, base=True)
 
 
 

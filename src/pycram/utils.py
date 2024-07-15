@@ -45,7 +45,7 @@ def _apply_ik(robot: 'pycram.world_concepts.WorldObject', pose_and_joint_poses: 
     :return: None
     """
     pose, joint_states = pose_and_joint_poses
-    robot.set_pose(pose, base=True)
+    robot.set_pose(pose, base=False)
     robot.set_joint_positions(joint_states)
 
 
