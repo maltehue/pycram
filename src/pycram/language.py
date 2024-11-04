@@ -19,7 +19,7 @@ class Language(NodeMixin):
     tree.
     """
     parallel_blocklist = ["PickUpAction", "PlaceAction", "OpenAction", "CloseAction", "TransportAction", "GraspingAction"]
-    do_not_use_giskard = ["SetGripperAction", "MoveGripperMotion", "DetectAction", "DetectingMotion"]
+    do_not_use_giskard = ["SetGripperAction", "MoveGripperMotion", "DetectAction", "DetectingMotion", "NavigateAction"]
     block_list: List[int] = []
     """List of thread ids which should be blocked from execution."""
 

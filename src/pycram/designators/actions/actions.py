@@ -10,8 +10,10 @@ from pycram.enums import Arms, Grasp
 from pycram.task import with_tree
 from dataclasses import dataclass, field
 from ..location_designator import CostmapLocation
+from ..motion_designator import MoveJointsMotion
 from ..object_designator import BelieveObject
 from ...bullet_world import BulletWorld
+from ...enums import ObjectType
 from ...helper import multiply_quaternions
 from ...local_transformer import LocalTransformer
 from ...orm.base import Pose as ORMPose
@@ -271,7 +273,7 @@ class PickUpActionPerformable(ActionAbstract):
         tmp_for_rotate_pose.pose.position.z = -0.1
         gripper_rotate_pose = object.local_transformer.transform_pose(tmp_for_rotate_pose, "map")
 
-        #Perform Gripper Rotate
+        # Perform Gripper Rotate
         # BulletWorld.current_bullet_world.add_vis_axis(gripper_rotate_pose)
         # MoveTCPMotion(gripper_rotate_pose, self.arm).resolve().perform()
 
@@ -281,8 +283,10 @@ class PickUpActionPerformable(ActionAbstract):
 
         # Perform the motion with the prepose and open gripper
         BulletWorld.current_bullet_world.add_vis_axis(prepose)
+        if object.type == ObjectType.BOWL:
+            prepose.pose.position.z -= 0.02
         MoveTCPMotion(prepose, self.arm, allow_gripper_collision=True).perform()
-        MoveGripperMotion(motion="open", gripper=self.arm).perform()
+        # MoveGripperMotion(motion="open", gripper=self.arm).perform()
 
         # Perform the motion with the adjusted pose -> actual grasp and close gripper
         BulletWorld.current_bullet_world.add_vis_axis(adjusted_oTm)
@@ -292,12 +296,13 @@ class PickUpActionPerformable(ActionAbstract):
         tool_frame = robot_description.get_tool_frame(self.arm)
         robot.attach(object, tool_frame)
 
-        # Lift object
-        BulletWorld.current_bullet_world.add_vis_axis(adjusted_oTm)
-        MoveTCPMotion(adjusted_oTm, self.arm, allow_gripper_collision=True).perform()
-
-        # Remove the vis axis from the world
-        BulletWorld.current_bullet_world.remove_vis_axis()
+        MoveJointsMotion(['joint_lift'], [1.1]).perform()
+        # # Lift object
+        # BulletWorld.current_bullet_world.add_vis_axis(adjusted_oTm)
+        # MoveTCPMotion(adjusted_oTm, self.arm, allow_gripper_collision=True).perform()
+        #
+        # # Remove the vis axis from the world
+        # BulletWorld.current_bullet_world.remove_vis_axis()
 
 
 @dataclass
@@ -335,10 +340,11 @@ class PlaceActionPerformable(ActionAbstract):
         MoveTCPMotion(target_diff, self.arm).perform()
         MoveGripperMotion("open", self.arm).perform()
         BulletWorld.robot.detach(self.object_designator.bullet_world_object)
-        retract_pose = local_tf.transform_pose(target_diff, BulletWorld.robot.get_link_tf_frame(
-            robot_description.get_tool_frame(self.arm)))
-        retract_pose.position.x -= 0.07
-        MoveTCPMotion(retract_pose, self.arm).perform()
+        # retract_pose = local_tf.transform_pose(target_diff, BulletWorld.robot.get_link_tf_frame(
+        #     robot_description.get_tool_frame(self.arm)))
+        # retract_pose.position.x -= 0.07
+        # MoveTCPMotion(retract_pose, self.arm).perform()
+        MoveJointsMotion(['joint_lift'], [1.1]).perform()
 
 
 @dataclass

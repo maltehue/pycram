@@ -1,4 +1,6 @@
-from typing import List
+import rosnode
+import tf
+from typing_extensions import List, Union, Tuple, Dict
 
 import pybullet as p
 import rospy
@@ -7,6 +9,7 @@ from moveit_msgs.msg import RobotState
 from moveit_msgs.srv import GetPositionIK
 from sensor_msgs.msg import JointState
 
+from .giskard import allow_gripper_collision, projection_cartesian_goal
 from ..bullet_world import Object
 from ..helper import calculate_wrist_tool_offset
 from ..local_transformer import LocalTransformer
@@ -87,6 +90,7 @@ def call_ik(root_link: str, tip_link: str, target_pose: Pose, robot_object: Obje
     else:
         ik_service = "/kdl_ik_service/get_ik"
 
+    rospy.loginfo_once(f"Waiting for IK service: {ik_service}")
     rospy.wait_for_service(ik_service)
 
     req = _make_request_msg(root_link, tip_link, target_pose, robot_object, joints)
@@ -106,13 +110,27 @@ def call_ik(root_link: str, tip_link: str, target_pose: Pose, robot_object: Obje
     return resp.solution.joint_state.position
 
 
-def request_ik(target_pose: Pose, robot: Object, joints: List[str], gripper: str) -> List[float]:
+def request_ik(target_pose: Pose, robot: Object, joints: List[str], gripper: str) -> Tuple[Pose, Dict[str, float]]:
+    """
+    Top-level method to request ik solution for a given pose. This method will check if the giskard node is running
+    and if so will call the giskard service. If the giskard node is not running the kdl_ik_service will be called.
+    :param target_pose: Pose of the end-effector for which an ik solution should be found
+    :param robot: The robot object which should be used
+    :param joints: A list of joints that should be used in computation, this is only relevant for the kdl_ik_service
+    :param gripper: Name of the tool frame which should grasp, this should be at the end of the given joint chain
+    :return: A Pose at which the robt should stand as well as a dictionary of joint values
+    """
+    if "/giskard" not in rosnode.get_node_names():
+        return robot.pose, request_kdl_ik(target_pose, robot, joints, gripper)
+    return request_giskard_ik(target_pose, robot, gripper)
+
+
+def request_kdl_ik(target_pose: Pose, robot: Object, joints: List[str], gripper: str) -> Dict[str, float]:
     """
     Top-level method to request ik solution for a given pose. Before calling the ik service the links directly before
     and after the joint chain will be queried and the target_pose will be transformed into the frame of the root_link.
     Afterward, the offset between the tip_link and end effector will be calculated and taken into account. Lastly the
     ik service is called and the result returned
-
     :param target_pose: Pose for which an ik solution should be found
     :param robot: Robot object which should be used
     :param joints: List of joints that should be used in computation
@@ -123,14 +141,51 @@ def request_ik(target_pose: Pose, robot: Object, joints: List[str], gripper: str
     base_link = robot_description.get_parent(joints[0])
     # Get link after last joint in chain
     end_effector = robot_description.get_child(joints[-1])
-
     target_torso = local_transformer.transform_pose(target_pose, robot.get_link_tf_frame(base_link))
-    # target_torso = _transform_to_torso(pose, shadow_robot)
-
     diff = calculate_wrist_tool_offset(end_effector, gripper, robot)
     target_diff = target_torso.to_transform("target").inverse_times(diff).to_pose()
 
     inv = call_ik(base_link, end_effector, target_diff, robot, joints)
 
-    return inv
+    return dict(zip(joints, inv))
+
+
+def request_giskard_ik(target_pose: Pose, robot: Object, gripper: str) -> Tuple[Pose, Dict[str, float]]:
+    """
+    Calls giskard in projection mode and queries the ik solution for a full body ik solution.
+    :param target_pose: Pose at which the end effector should be moved.
+    :param robot: Robot object which should be used.
+    :param gripper: Name of the tool frame which should grasp, this should be at the end of the given joint chain.
+    :return: A list of joint values.
+    """
+    rospy.loginfo_once(f"Using Giskard for full body IK")
+    local_transformer = LocalTransformer()
+    target_map = local_transformer.transform_pose(target_pose, "map")
+
+    allow_gripper_collision("all")
+    result = projection_cartesian_goal(target_map, gripper, "map")
+    last_point = result.trajectory.points[-1]
+    joint_names = result.trajectory.joint_names
+
+    joint_states = dict(zip(joint_names, last_point.positions))
+    prospection_robot = World.current_world.get_prospection_object_for_object(robot)
+
+    orientation = list(tf.transformations.quaternion_from_euler(0, 0, joint_states["brumbrum_yaw"], axes="sxyz"))
+    pose = Pose([joint_states["brumbrum_x"], joint_states["brumbrum_y"], 0], orientation)
+
+    robot_joint_states = {}
+    for joint_name, state in joint_states.items():
+        if joint_name in robot.joints.keys():
+            robot_joint_states[joint_name] = state
+
+    with UseProspectionWorld():
+        prospection_robot.set_joint_positions(robot_joint_states)
+        prospection_robot.set_pose(pose)
+
+        tip_pose = prospection_robot.get_link_pose(gripper)
+        dist = tip_pose.dist(target_map)
+
+        if dist > 0.01:
+            raise IKError(target_pose, "map")
+        return pose, robot_joint_states
 

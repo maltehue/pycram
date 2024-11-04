@@ -53,6 +53,7 @@ class ObjectType(Enum):
     ROBOT = auto()
     ENVIRONMENT = auto()
     GENERIC_OBJECT = auto()
+    YELLOW_CUP = auto()
 
 
 class State(Enum):

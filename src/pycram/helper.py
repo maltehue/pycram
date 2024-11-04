@@ -12,6 +12,7 @@ from typing import Tuple, Callable
 
 import numpy as np
 import pybullet as p
+from geometry_msgs.msg import Point, Quaternion
 from pytransform3d.rotations import quaternion_wxyz_from_xyzw, quaternion_xyzw_from_wxyz
 from pytransform3d.transformations import transform_from_pq, transform_from, pq_from_transform
 

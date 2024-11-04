@@ -19,13 +19,13 @@ from geometry_msgs.msg import PoseStamped, PointStamped, QuaternionStamped, Vect
 from threading import Lock, RLock
 
 try:
-    from giskardpy.python_interface import GiskardWrapper
+    from giskardpy.python_interface.old_python_interface import OldGiskardWrapper as GiskardWrapper
     from giskard_msgs.msg import WorldBody, MoveResult, CollisionEntry
     from giskard_msgs.srv import UpdateWorldRequest, UpdateWorld, UpdateWorldResponse, RegisterGroupResponse
 except ModuleNotFoundError as e:
     rospy.logwarn("Failed to import Giskard messages")
 
-giskard_wrapper = None
+giskard_wrapper: GiskardWrapper = None
 giskard_update_service = None
 is_init = False
 
@@ -246,7 +246,7 @@ def _manage_par_motion_goals(goal_func, *args) -> Optional['MoveResult']:
                             raise AttributeError(f"The joint(s) {set(chain).intersection(used_joints)} is used by multiple Designators")
                         else:
                             [used_joints.add(joint) for joint in chain]
-                            
+
                     elif "goal_state" in par_value_pair.keys():
                         if set(par_value_pair["goal_state"].keys()).intersection(used_joints) != set():
                             giskard_wrapper.cmd_seq = tmp
@@ -259,7 +259,7 @@ def _manage_par_motion_goals(goal_func, *args) -> Optional['MoveResult']:
                 if key in par_motion_goal.keys():
                     del par_motion_goal[key]
                 del par_threads[key]
-                res = giskard_wrapper.plan_and_execute()
+                res = giskard_wrapper.execute()
                 giskard_wrapper.cmd_seq = tmp
                 return res
             else:
@@ -284,7 +284,7 @@ def achieve_joint_goal(goal_poses: Dict[str, float]) -> 'MoveResult':
         return par_return
 
     giskard_wrapper.set_joint_goal(goal_poses)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -305,8 +305,8 @@ def achieve_cartesian_goal(goal_pose: Pose, tip_link: str, root_link: str) -> 'M
     if par_return:
         return par_return
 
-    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
-    return giskard_wrapper.plan_and_execute()
+    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link, add_monitor=False)
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -329,7 +329,7 @@ def achieve_straight_cartesian_goal(goal_pose: Pose, tip_link: str,
         return par_return
 
     giskard_wrapper.set_straight_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -351,7 +351,7 @@ def achieve_translation_goal(goal_point: List[float], tip_link: str, root_link: 
         return par_return
 
     giskard_wrapper.set_translation_goal(make_point_stamped(goal_point), tip_link, root_link)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -374,7 +374,7 @@ def achieve_straight_translation_goal(goal_point: List[float], tip_link: str, ro
         return par_return
 
     giskard_wrapper.set_straight_translation_goal(make_point_stamped(goal_point), tip_link, root_link)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -396,7 +396,7 @@ def achieve_rotation_goal(quat: List[float], tip_link: str, root_link: str) -> '
         return par_return
 
     giskard_wrapper.set_rotation_goal(make_quaternion_stamped(quat), tip_link, root_link)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -422,7 +422,7 @@ def achieve_align_planes_goal(goal_normal: List[float], tip_link: str, tip_norma
     giskard_wrapper.set_align_planes_goal(make_vector_stamped(goal_normal), tip_link,
                                           make_vector_stamped(tip_normal),
                                           root_link)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -441,7 +441,7 @@ def achieve_open_container_goal(tip_link: str, environment_link: str) -> 'MoveRe
     if par_return:
         return par_return
     giskard_wrapper.set_open_container_goal(tip_link, environment_link)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
 
 
 @init_giskard_interface
@@ -461,7 +461,63 @@ def achieve_close_container_goal(tip_link: str, environment_link: str) -> 'MoveR
         return par_return
 
     giskard_wrapper.set_close_container_goal(tip_link, environment_link)
-    return giskard_wrapper.plan_and_execute()
+    return giskard_wrapper.execute()
+
+
+# Projection Goals
+
+
+@init_giskard_interface
+def projection_cartesian_goal(goal_pose: Pose, tip_link: str, root_link: str) -> 'MoveResult':
+    """
+    Tries to move the tip_link to the position defined by goal_pose using the chain defined by tip_link and root_link.
+    The goal_pose is projected to the closest point on the robot's workspace.
+    :param goal_pose: The position which should be achieved with tip_link
+    :param tip_link: The end link of the chain as well as the link which should achieve the goal_pose
+    :param root_link: The starting link of the chain which should be used to achieve this goal
+    :return: MoveResult message for this goal
+    """
+    sync_worlds()
+    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
+    return giskard_wrapper.projection()
+
+
+@init_giskard_interface
+def projection_cartesian_goal_with_approach(approach_pose: Pose, goal_pose: Pose, tip_link: str, root_link: str,
+                                            robot_base_link: str) -> 'MoveResult':
+    """
+    Tries to achieve the goal_pose using the chain defined by tip_link and root_link. The approach_pose is used to drive
+    the robot to a pose close the actual goal pose, the robot_base_link is used to define the base link of the robot.
+    :param approach_pose: Pose near the goal_pose
+    :param goal_pose: Pose to which the tip_link should be moved
+    :param tip_link: The link which should be moved to goal_pose, usually the tool frame
+    :param root_link: The start of the link chain which should be used for planning
+    :param robot_base_link: The base link of the robot
+    :return: A trajectory calculated to move the tip_link to the goal_pose
+    """
+    sync_worlds()
+    giskard_wrapper.allow_all_collisions()
+    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(approach_pose), robot_base_link, "map")
+    giskard_wrapper.projection()
+    giskard_wrapper.avoid_all_collisions()
+    giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
+    return giskard_wrapper.projection()
+
+
+@init_giskard_interface
+def projection_joint_goal(goal_poses: Dict[str, float], allow_collisions: bool = False) -> 'MoveResult':
+    """
+    Tries to achieve the joint goal defined by goal_poses, the goal_poses are projected to the closest point on the
+    robot's workspace.
+    :param goal_poses: Dictionary with joint names and position goals
+    :param allow_collisions: If all collisions should be allowed for this goal
+    :return: MoveResult message for this goal
+    """
+    sync_worlds()
+    if allow_collisions:
+        giskard_wrapper.allow_all_collisions()
+    giskard_wrapper.set_joint_goal(goal_poses)
+    return giskard_wrapper.projection()
 
 
 # Managing collisions
