@@ -20,7 +20,16 @@ import io
 from ..ros.logging import logdebug
 
 
+class HSRBMoveArmJoints(ProcessModule):
 
+    def _execute(self, designator: MoveArmJointsMotion) -> Any:
+        joint_goals = {}
+        if designator.left_arm_poses:
+            joint_goals.update(designator.left_arm_poses)
+        if designator.right_arm_poses:
+            joint_goals.update(designator.right_arm_poses)
+        giskard.avoid_all_collisions()
+        giskard.achieve_joint_goal(joint_goals)
 
 ###########################################################
 ########## Process Modules for the Real HSRB ###############
@@ -193,6 +202,8 @@ class HSRBManager(DefaultManager):
             return HSRBMoveHeadReal(self._looking_lock)
         elif ProcessModuleManager.execution_type == ExecutionType.SEMI_REAL:
             return HSRBMoveHeadReal(self._looking_lock)
+        elif ProcessModuleManager.execution_type == ExecutionType.SIMULATED:
+            return DefaultMoveHeadReal(self._looking_lock)
 
     def detecting(self):
         if ProcessModuleManager.execution_type == ExecutionType.SIMULATED:
@@ -205,11 +216,15 @@ class HSRBManager(DefaultManager):
             return HSRBMoveTCPReal(self._move_tcp_lock)
         elif ProcessModuleManager.execution_type == ExecutionType.SEMI_REAL:
             return HSRBMoveTCPReal(self._move_tcp_lock)
+        elif ProcessModuleManager.execution_type == ExecutionType.SIMULATED:
+            return HSRBMoveTCPReal(self._move_tcp_lock)
 
     def move_arm_joints(self):
         if ProcessModuleManager.execution_type == ExecutionType.REAL:
             return HSRBMoveArmJointsReal(self._move_arm_joints_lock)
         elif ProcessModuleManager.execution_type == ExecutionType.SEMI_REAL:
+            return HSRBMoveArmJointsReal(self._move_arm_joints_lock)
+        elif ProcessModuleManager.execution_type == ExecutionType.SIMULATED:
             return HSRBMoveArmJointsReal(self._move_arm_joints_lock)
 
     def move_joints(self):
@@ -217,11 +232,15 @@ class HSRBManager(DefaultManager):
             return HSRBMoveJointsReal(self._move_joints_lock)
         elif ProcessModuleManager.execution_type == ExecutionType.SEMI_REAL:
             return HSRBMoveJointsReal(self._move_joints_lock)
+        elif ProcessModuleManager.execution_type == ExecutionType.SIMULATED:
+            return HSRBMoveJointsReal(self._move_joints_lock)
 
     def move_gripper(self):
         if ProcessModuleManager.execution_type == ExecutionType.REAL:
             return HSRBMoveGripperReal(self._move_gripper_lock)
         elif ProcessModuleManager.execution_type == ExecutionType.SEMI_REAL:
+            return HSRBMoveGripperReal(self._move_gripper_lock)
+        elif ProcessModuleManager.execution_type == ExecutionType.SIMULATED:
             return HSRBMoveGripperReal(self._move_gripper_lock)
 
     def open(self):

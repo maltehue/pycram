@@ -1,5 +1,5 @@
 from ..ros.ros_tools import get_ros_package_path
-
+from ..datastructures.dataclasses import VirtualMobileBaseJoints
 from ..robot_description import RobotDescription, KinematicChainDescription, EndEffectorDescription, \
     RobotDescriptionManager, CameraDescription
 from ..datastructures.enums import GripperState, Grasp, Arms, TorsoState
@@ -7,7 +7,7 @@ from ..datastructures.enums import GripperState, Grasp, Arms, TorsoState
 filename = get_ros_package_path('pycram') + '/resources/robots/' + "hsrb" + '.urdf'
 
 hsrb_description = RobotDescription("hsrb", "base_link", "arm_lift_link", "arm_lift_joint",
-                                    filename)
+                                    filename, virtual_mobile_base_joints=VirtualMobileBaseJoints())
 
 ################################## Left Arm ##################################
 left_arm = KinematicChainDescription("left_arm", "arm_lift_link", "hand_palm_link",

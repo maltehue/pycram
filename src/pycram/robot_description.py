@@ -368,7 +368,7 @@ class RobotDescription:
         for chain in self.kinematic_chains.values():
             if chain.arm_type == arm:
                 return chain
-        raise ValueError(f"There is no Kinematic Chain for the Arm {arm}")
+        # raise ValueError(f"There is no Kinematic Chain for the Arm {arm}")
 
 
 class KinematicChainDescription:

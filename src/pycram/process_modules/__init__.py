@@ -6,12 +6,16 @@ from .default_process_modules import DefaultManager
 from .stretch_process_modules import StretchManager
 from .robotiq_gripper_process_module import RobotiqManager
 from .tiago_process_modules import TiagoManager
+from .kevin_process_modules import KevinManager
 
 Pr2Manager()
 BoxyManager()
 DonbotManager()
 HSRBManager()
-DefaultManager()
 StretchManager()
 TiagoManager()
 RobotiqManager()
+KevinManager()
+# Default manager must be the last one
+DefaultManager()
+

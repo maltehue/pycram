@@ -227,7 +227,7 @@ class ParkArmsActionPerformable(ActionAbstract):
                 kwargs["left_arm_config"])
 
         # add park right arm if wanted
-        if self.arm in [Arms.RIGHT, Arms.BOTH]:
+        if self.arm in [Arms.RIGHT, Arms.BOTH] and RobotDescription.current_robot_description.get_arm_chain(Arms.RIGHT):
             kwargs["right_arm_config"] = "park"
             right_poses = RobotDescription.current_robot_description.get_arm_chain(Arms.RIGHT).get_static_joint_states(
                 kwargs["right_arm_config"])
