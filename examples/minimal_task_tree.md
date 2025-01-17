@@ -29,19 +29,20 @@ from pycram.designators.location_designator import *
 from pycram.process_module import simulated_robot
 from pycram.designators.object_designator import *
 from pycram.datastructures.pose import Pose
-from pycram.datastructures.enums import ObjectType, WorldMode
+from pycram.datastructures.enums import ObjectType, WorldMode, TorsoState
 import anytree
 import pycram.failures
+import pycrap
 ```
 
 Next we will create a bullet world with a PR2 in a kitchen containing milk and cereal.
 
 ```python
 world = BulletWorld(WorldMode.DIRECT)
-pr2 = Object("pr2", ObjectType.ROBOT, "pr2.urdf")
-kitchen = Object("kitchen", ObjectType.ENVIRONMENT, "kitchen.urdf")
-milk = Object("milk", ObjectType.MILK, "milk.stl", pose=Pose([1.3, 1, 0.9]))
-cereal = Object("cereal", ObjectType.BREAKFAST_CEREAL, "breakfast_cereal.stl", pose=Pose([1.3, 0.7, 0.95]))
+pr2 = Object("pr2", pycrap.Robot, "pr2.urdf")
+kitchen = Object("kitchen", pycrap.Kitchen, "kitchen.urdf")
+milk = Object("milk", pycrap.Milk, "milk.stl", pose=Pose([1.3, 1, 0.9]))
+cereal = Object("cereal", pycrap.Cereal, "breakfast_cereal.stl", pose=Pose([1.3, 0.7, 0.95]))
 milk_desig = ObjectDesignatorDescription(names=["milk"])
 cereal_desig = ObjectDesignatorDescription(names=["cereal"])
 robot_desig = ObjectDesignatorDescription(names=["pr2"]).resolve()
@@ -55,7 +56,7 @@ Finally, we create a plan where the robot parks his arms, walks to the kitchen c
 def plan():
     with simulated_robot:
         ParkArmsActionPerformable(Arms.BOTH).perform()
-        MoveTorsoAction([0.22]).resolve().perform()
+        MoveTorsoAction([TorsoState.MID]).resolve().perform()
         pickup_pose = CostmapLocation(target=cereal_desig.resolve(), reachable_for=robot_desig).resolve()
         pickup_arm = pickup_pose.reachable_arms[0]
         NavigateAction(target_locations=[pickup_pose.pose]).resolve().perform()

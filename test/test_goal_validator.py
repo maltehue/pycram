@@ -2,7 +2,7 @@ import numpy as np
 from tf.transformations import quaternion_from_euler
 from typing_extensions import Optional, List
 
-from bullet_world_testcase import BulletWorldTestCase
+from pycram.testing import BulletWorldTestCase
 from pycram.datastructures.enums import JointType
 from pycram.datastructures.pose import Pose
 from pycram.robot_description import RobotDescription
@@ -88,7 +88,7 @@ class TestGoalValidator(BulletWorldTestCase):
         self.validate_revolute_joint_position_goal(goal_validator, JointType.REVOLUTE)
 
     def validate_revolute_joint_position_goal(self, goal_validator, joint_type: Optional[JointType] = None):
-        goal_joint_position = -np.pi / 4
+        goal_joint_position = -np.pi / 8
         joint_name = 'l_shoulder_lift_joint'
         if joint_type is not None:
             goal_validator.register_goal(goal_joint_position, joint_type, joint_name)
