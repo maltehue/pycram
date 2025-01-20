@@ -24,6 +24,7 @@ from ..local_transformer import LocalTransformer
 from ..failures import ObjectUnfetchable, ReachabilityFailure, NavigationGoalNotReachedError, PerceptionObjectNotFound, \
     ObjectNotGraspedError
 from ..robot_description import RobotDescription
+from ..ros.ros_tools import sleep
 from ..tasktree import with_tree
 from ..world_reasoning import contact
 
@@ -165,7 +166,12 @@ class SetGripperActionPerformable(ActionAbstract):
 
     @with_tree
     def plan(self) -> None:
-        MoveGripperMotion(gripper=self.gripper, motion=self.motion).perform()
+        arm_chains = RobotDescription.current_robot_description.get_arm_chain(self.gripper)
+        if type(arm_chains) is not list:
+            MoveGripperMotion(gripper=arm_chains.arm_type, motion=self.motion).perform()
+        else:
+            for chain in arm_chains:
+                MoveGripperMotion(gripper=chain.arm_type, motion=self.motion).perform()
 
 
 @dataclass
@@ -215,24 +221,15 @@ class ParkArmsActionPerformable(ActionAbstract):
 
     @with_tree
     def plan(self) -> None:
-        # create the keyword arguments
-        kwargs = dict()
-        left_poses = None
-        right_poses = None
+        joint_poses = {}
+        arm_chains = RobotDescription.current_robot_description.get_arm_chain(self.arm)
+        if type(arm_chains) is not list:
+            joint_poses = arm_chains.get_static_joint_states("park")
+        else:
+            for arm_chain in RobotDescription.current_robot_description.get_arm_chain(self.arm):
+                joint_poses.update(arm_chain.get_static_joint_states("park"))
 
-        # add park left arm if wanted
-        if self.arm in [Arms.LEFT, Arms.BOTH]:
-            kwargs["left_arm_config"] = "park"
-            left_poses = RobotDescription.current_robot_description.get_arm_chain(Arms.LEFT).get_static_joint_states(
-                kwargs["left_arm_config"])
-
-        # add park right arm if wanted
-        if self.arm in [Arms.RIGHT, Arms.BOTH] and RobotDescription.current_robot_description.get_arm_chain(Arms.RIGHT):
-            kwargs["right_arm_config"] = "park"
-            right_poses = RobotDescription.current_robot_description.get_arm_chain(Arms.RIGHT).get_static_joint_states(
-                kwargs["right_arm_config"])
-
-        MoveArmJointsMotion(left_poses, right_poses).perform()
+        MoveJointsMotion(names=list(joint_poses.keys()), positions=list(joint_poses.values())).perform()
 
 
 @dataclass
@@ -279,6 +276,7 @@ class PickUpActionPerformable(ActionAbstract):
         robot = World.robot
         # Retrieve object and robot from designators
         object = self.object_designator.world_object
+
         # Get grasp orientation and target pose
         grasp = RobotDescription.current_robot_description.grasps[self.grasp]
         # oTm = Object Pose in Frame map
