@@ -8,7 +8,7 @@ from ....datastructures.world import UseProspectionWorld, World
 from ....local_transformer import LocalTransformer
 from ....costmaps import OccupancyCostmap, GaussianCostmap
 from ....pose_generator_and_validator import PoseGenerator
-
+from ....robot_descriptions.stretch_description import stretch_orientation_generator
 
 class GiskardLocation(CostmapLocation):
     """'
@@ -30,13 +30,13 @@ class GiskardLocation(CostmapLocation):
 
         manipulator_descs = RobotDescription.current_robot_description.get_manipulator_chains()
 
-        near_costmap = (OccupancyCostmap(0.35, False, 200, 0.02, target_map)
+        near_costmap = (OccupancyCostmap(0.5, False, 200, 0.02, target_map)
                         + GaussianCostmap(200, 15, 0.02, target_map))
-        for maybe_pose in PoseGenerator(near_costmap, 200):
+        for maybe_pose in PoseGenerator(near_costmap, 200, stretch_orientation_generator):
             for chain in manipulator_descs:
                 projection_joint_goal(chain.get_static_joint_states("park"), allow_collisions=True)
 
-                trajectory = projection_cartesian_goal_with_approach(maybe_pose, target_map, chain.tool_frame,
+                trajectory = projection_cartesian_goal_with_approach(maybe_pose, target_map, chain.end_effector.tool_frame,
                                                                      "map", RobotDescription.current_robot_description.base_link)
                 last_point_positions = trajectory.trajectory.points[-1].positions
                 last_point_names = trajectory.trajectory.joint_names
@@ -58,6 +58,6 @@ class GiskardLocation(CostmapLocation):
                     gripper_pose = prospection_robot.get_link_pose(chain.get_tool_frame())
 
                     if gripper_pose.dist(target_map) <= 0.02:
-                        yield CostmapLocation.Location(pose, [chain.arm_type])
+                        yield CostmapLocation.Location(pose, [chain.arm_type], [])
 
 

@@ -278,12 +278,12 @@ class StretchManager(DefaultManager):
 
     def open(self):
         if ProcessModuleManager.execution_type ==  ExecutionType.SIMULATED:
-            return StretchOpen(self._open_lock)
+            return StretchOpenReal(self._open_lock)
         elif ProcessModuleManager.execution_type ==  ExecutionType.REAL:
             return StretchOpenReal(self._open_lock)
 
     def close(self):
         if ProcessModuleManager.execution_type ==  ExecutionType.SIMULATED:
-            return StretchClose(self._close_lock)
+            return StretchCloseReal(self._close_lock)
         elif ProcessModuleManager.execution_type ==  ExecutionType.REAL:
             return StretchCloseReal(self._close_lock)

@@ -13,10 +13,10 @@ left_arm_description = KinematicChainDescription("left", "robot_arm_base_link", 
                                                  kevin_description.urdf_object, arm_type=Arms.LEFT)
 
 left_arm_description.add_static_joint_states("park",
-                                             {"robot_arm_column_joint": 0.0022,
-                                              "robot_arm_inner_joint": 0,
-                                              "robot_arm_outer_joint": 0.33,
-                                              "robot_arm_wrist_joint": 0})
+                                             {"robot_arm_column_joint": 0.63,
+                                              "robot_arm_inner_joint": 0.03,
+                                              "robot_arm_outer_joint": 4.70,
+                                              "robot_arm_wrist_joint": -1.63})
 
 kevin_description.add_kinematic_chain_description(left_arm_description)
 
@@ -24,10 +24,10 @@ kevin_description.add_kinematic_chain_description(left_arm_description)
 only_gripper_description = EndEffectorDescription("gripper", "robot_arm_wrist_link", "robot_arm_tool_link",kevin_description.urdf_object)
 only_gripper_description.add_static_joint_states(GripperState.OPEN, {'robot_arm_gripper_joint': 0.066,
                                               'robot_arm_gripper_mirror_joint': 0.066})
-only_gripper_description.add_static_joint_states(GripperState.CLOSE, {'robot_arm_gripper_joint': 0.04,
-                                               'robot_arm_gripper_mirror_joint': 0.04})
+only_gripper_description.add_static_joint_states(GripperState.CLOSE, {'robot_arm_gripper_joint': 0.02,
+                                               'robot_arm_gripper_mirror_joint': 0.02})
 only_gripper_description.end_effector_type = GripperType.PARALLEL
-only_gripper_description.opening_distance = 0.548
+only_gripper_description.opening_distance = 0.7
 
 left_arm_description.end_effector = only_gripper_description
 
@@ -58,7 +58,7 @@ torso.add_static_joint_states(TorsoState.LOW, {"robot_arm_column_joint": 0})
 
 kevin_description.add_kinematic_chain_description(torso)
 ################################# Grasps ##################################
-kevin_description.add_grasp_orientations({Grasp.FRONT: [-1, 0, -1, 0],
+kevin_description.add_grasp_orientations({Grasp.FRONT: [0, 0, 0, 1],
                                           Grasp.LEFT: [0, -1, 1, 0],
                                           Grasp.RIGHT: [0, -1, -1, 0.0],
                                           Grasp.TOP: [-1, 0, 0, 0]})

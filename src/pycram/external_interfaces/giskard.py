@@ -373,6 +373,13 @@ def achieve_cartesian_goal(goal_pose: Pose, tip_link: str, root_link: str,
     if grippers_that_can_collide is not None:
         allow_gripper_collision(grippers_that_can_collide)
 
+    point  = PointStamped()
+    point.header.frame_id = goal_pose.header.frame_id
+    point.point = goal_pose.pose.position
+    pointing = Vector3Stamped()
+    pointing.header.frame_id = 'link_arm_l0'
+    pointing.vector.z = 1
+    giskard_wrapper.motion_goals.add_pointing(point, 'link_arm_l0', pointing, root_link)
     return giskard_wrapper.execute()
 
 
@@ -558,6 +565,14 @@ def projection_cartesian_goal(goal_pose: Pose, tip_link: str, root_link: str) ->
     :return: MoveResult message for this goal
     """
     sync_worlds(projection=True)
+    # point = PointStamped()
+    # point.header.frame_id = goal_pose.header.frame_id
+    # point.point = goal_pose.pose.position
+    # pointing = Vector3Stamped()
+    # pointing.header.frame_id = 'link_arm_l0'
+    # pointing.vector.z = 1
+    # giskard_wrapper.motion_goals.add_pointing(point, 'link_arm_l0', pointing, root_link, weight=100)
+    giskard_wrapper.allow_all_collisions()
     giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
     return giskard_wrapper.projection()
 
@@ -580,7 +595,7 @@ def projection_cartesian_goal_with_approach(approach_pose: Pose, goal_pose: Pose
     giskard_wrapper.allow_all_collisions()
     giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(approach_pose), robot_base_link, "map")
     giskard_wrapper.projection()
-    giskard_wrapper.avoid_all_collisions()
+    giskard_wrapper.allow_all_collisions()
     giskard_wrapper.set_cart_goal(_pose_to_pose_stamped(goal_pose), tip_link, root_link)
     return giskard_wrapper.projection()
 
