@@ -2,11 +2,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from pycrap import PhysicalObject, Location
-from .object_designator import ObjectDesignatorDescription, ObjectPart, RealObject
+from pycrap.ontologies import PhysicalObject, Location
+from .object_designator import ObjectDesignatorDescription, ObjectPart
 from ..datastructures.enums import MovementType
 from ..failure_handling import try_motion
 from ..failures import PerceptionObjectNotFound, ToolPoseNotReachedError
+from ..object_descriptors.urdf import LinkDescription, ObjectDescription
 from ..process_module import ProcessModuleManager
 from ..orm.motion_designator import (MoveMotion as ORMMoveMotion,
                                      MoveTCPMotion as ORMMoveTCPMotion, LookingMotion as ORMLookingMotion,
@@ -19,6 +20,7 @@ from typing_extensions import Dict, Optional, Type
 from ..datastructures.pose import Pose
 from ..tasktree import with_tree
 from ..designator import BaseMotion
+from ..world_concepts.world_object import Object
 from ..external_interfaces.robokudo import robokudo_found
 
 
@@ -95,6 +97,16 @@ class MoveTCPMotion(BaseMotion):
 
         return motion
 
+    def __str__(self):
+        return (f"MoveTCPMotion:\n"
+                f"Target: {self.target}\n"
+                f"Arm: {self.arm}\n"
+                f"AllowGripperCollision: {self.allow_gripper_collision}\n"
+                f"MovementType: {self.movement_type}")
+
+    def __repr__(self):
+        return self.__str__()
+
 
 @dataclass
 class LookingMotion(BaseMotion):
@@ -153,6 +165,15 @@ class MoveGripperMotion(BaseMotion):
 
         return motion
 
+    def __str__(self):
+        return (f"MoveGripperMotion:\n"
+                f"Motion: {self.motion}\n"
+                f"Gripper: {self.gripper}\n"
+                f"AllowGripperCollision: {self.allow_gripper_collision}")
+
+    def __repr__(self):
+        return self.__str__()
+
 
 @dataclass
 class DetectingMotion(BaseMotion):
@@ -170,7 +191,7 @@ class DetectingMotion(BaseMotion):
     """
     State of the detection
     """
-    object_designator_description: Optional[ObjectDesignatorDescription] = None
+    object_designator_description: Optional[Object] = None
     """
     Description of the object that should be detected
     """
@@ -276,7 +297,7 @@ class OpeningMotion(BaseMotion):
     Designator for opening container
     """
 
-    object_part: ObjectPart.Object
+    object_part: ObjectDescription.Link
     """
     Object designator for the drawer handle
     """
@@ -295,8 +316,6 @@ class OpeningMotion(BaseMotion):
 
     def insert(self, session: Session, *args, **kwargs) -> ORMOpeningMotion:
         motion = super().insert(session)
-        op = self.object_part.insert(session)
-        motion.object = op
         session.add(motion)
 
         return motion
@@ -308,7 +327,7 @@ class ClosingMotion(BaseMotion):
     Designator for closing a container
     """
 
-    object_part: ObjectPart.Object
+    object_part: ObjectDescription.Link
     """
     Object designator for the drawer handle
     """
@@ -327,8 +346,6 @@ class ClosingMotion(BaseMotion):
 
     def insert(self, session: Session, *args, **kwargs) -> ORMClosingMotion:
         motion = super().insert(session)
-        op = self.object_part.insert(session)
-        motion.object = op
         session.add(motion)
 
         return motion

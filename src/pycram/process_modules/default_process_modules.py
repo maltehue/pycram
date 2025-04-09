@@ -1,11 +1,10 @@
 import inspect
 
 import numpy as np
-import rospy
 from typing_extensions import List, TYPE_CHECKING
+from scipy.spatial.transform import Rotation as R
 
-from pycrap import *
-from ..datastructures.enums import JointType
+from ..datastructures.dataclasses import Colors
 from ..datastructures.world import World
 from ..designators.motion_designator import *
 from ..external_interfaces import giskard
@@ -18,10 +17,10 @@ from ..local_transformer import LocalTransformer
 from ..object_descriptors.generic import ObjectDescription as GenericObjectDescription
 from ..process_module import ProcessModule
 from ..robot_description import RobotDescription
-from ..ros.data_types import Duration
-from ..ros.logging import logdebug, loginfo, logwarn
-from ..ros.ros_tools import get_time
-from ..utils import _apply_ik, map_color_names_to_rgba
+from ..ros import get_time
+from ..ros import logdebug, loginfo
+from ..tf_transformations import euler_from_quaternion
+from ..utils import _apply_ik
 from ..world_concepts.world_object import Object
 from ..world_reasoning import visible, link_pose_for_joint_config
 
@@ -41,27 +40,47 @@ class DefaultNavigation(ProcessModule):
 
 class DefaultMoveHead(ProcessModule):
     """
-    This process module moves the head to look at a specific point in the world coordinate frame.
-    This point can either be a position or an object.
+    Moves the robot's head to look at a specified target point in the world coordinate frame.
+    The target can be either a position or an object.
     """
 
     def _execute(self, desig: LookingMotion):
         target = desig.target
         robot = World.robot
-
         local_transformer = LocalTransformer()
-        pose_in_pan = local_transformer.transform_pose(target, robot.get_link_tf_frame("head_pan_link"))
-        pose_in_tilt = local_transformer.transform_pose(target, robot.get_link_tf_frame("head_tilt_link"))
 
-        new_pan = np.arctan2(pose_in_pan.position.y, pose_in_pan.position.x)
-        new_tilt = np.arctan2(pose_in_tilt.position.z, pose_in_tilt.position.x ** 2 + pose_in_tilt.position.y ** 2) * -1
+        neck = RobotDescription.current_robot_description.get_neck()
+        pan_link = neck["yaw"][0]
+        tilt_link = neck["pitch"][0]
 
-        current_pan = robot.get_joint_position("head_pan_joint")
-        current_tilt = robot.get_joint_position("head_tilt_joint")
+        pan_joint = neck["yaw"][1]
+        tilt_joint = neck["pitch"][1]
 
-        robot.set_joint_position("head_pan_joint", new_pan + current_pan)
-        robot.set_joint_position("head_tilt_joint", new_tilt + current_tilt)
+        pose_in_pan = local_transformer.transform_pose(target, robot.get_link_tf_frame(pan_link)).position_as_list()
+        pose_in_tilt = local_transformer.transform_pose(target, robot.get_link_tf_frame(tilt_link)).position_as_list()
 
+        new_pan = np.arctan2(pose_in_pan[1], pose_in_pan[0])
+
+        tilt_offset = RobotDescription.current_robot_description.get_offset(tilt_joint)
+        if tilt_offset:
+            tilt_offset_rotation = tilt_offset.pose.orientation
+            quaternion_list = [tilt_offset_rotation.x, tilt_offset_rotation.y, tilt_offset_rotation.z, tilt_offset_rotation.w]
+        else:
+            quaternion_list = [0, 0, 0, 1]
+
+        tilt_offset_rotation = euler_from_quaternion(quaternion_list, axes='sxyz')
+        adjusted_pose_in_tilt = R.from_euler('xyz', tilt_offset_rotation).apply(pose_in_tilt)
+
+        new_tilt = -np.arctan2(adjusted_pose_in_tilt[2],
+                               np.sqrt(adjusted_pose_in_tilt[0] ** 2 + adjusted_pose_in_tilt[1] ** 2))
+
+        if RobotDescription.current_robot_description.name in {"iCub", "tiago_dual"}:
+            new_tilt = -new_tilt
+
+        current_pan = robot.get_joint_position(pan_joint)
+        current_tilt = robot.get_joint_position(tilt_joint)
+        robot.set_joint_position(pan_joint, new_pan + current_pan)
+        robot.set_joint_position(tilt_joint, new_tilt + current_tilt)
 
 class DefaultMoveGripper(ProcessModule):
     """
@@ -96,14 +115,15 @@ class DefaultDetecting(ProcessModule):
         front_facing_axis = camera_description.front_facing_axis
         query_result = []
         world_objects = []
-        try:
-            object_types = designator.object_designator_description.types
-        except AttributeError:
-            object_types = None
+
         if designator.technique == DetectionTechnique.TYPES:
-            for obj_type in object_types:
-                list1 = World.current_world.get_object_by_type(obj_type)
-                world_objects = world_objects + list1
+            try:
+                object_types = designator.object_designator_description.obj_type
+            except AttributeError:
+                raise AttributeError("The object designator does not contain a type attribute")
+
+            list1 = World.current_world.get_object_by_type(object_types)
+            world_objects = world_objects + list1
         elif designator.technique == DetectionTechnique.ALL:
             world_objects = World.current_world.get_scene_objects()
         elif designator.technique == DetectionTechnique.HUMAN:
@@ -124,8 +144,8 @@ class DefaultDetecting(ProcessModule):
             object_dict = []
 
             for obj in query_result:
-                object_dict.append(ObjectDesignatorDescription.Object(obj.name, obj.obj_type,
-                                                   obj))
+                object_dict.append(obj)
+
 
             return object_dict
 
@@ -182,17 +202,17 @@ class DefaultOpen(ProcessModule):
     """
 
     def _execute(self, desig: OpeningMotion):
-        part_of_object = desig.object_part.world_object
+        part_of_object = desig.object_part.parent_entity
 
         container_joint_name = part_of_object.find_joint_above_link(desig.object_part.name)
         lower_limit, upper_limit = part_of_object.get_joint_limits(container_joint_name)
 
-        goal_pose = link_pose_for_joint_config(part_of_object,{
+        goal_pose = link_pose_for_joint_config(part_of_object, {
             container_joint_name: max(lower_limit, upper_limit - 0.05)}, desig.object_part.name)
 
         _move_arm_tcp(goal_pose, World.robot, desig.arm)
 
-        desig.object_part.world_object.set_joint_position(container_joint_name, upper_limit)
+        part_of_object.set_joint_position(container_joint_name, upper_limit)
 
 
 class DefaultClose(ProcessModule):
@@ -201,7 +221,7 @@ class DefaultClose(ProcessModule):
     """
 
     def _execute(self, desig: ClosingMotion):
-        part_of_object = desig.object_part.world_object
+        part_of_object = desig.object_part.parent_entity
 
         container_joint_name = part_of_object.find_joint_above_link(desig.object_part.name)
         lower_joint_limit = part_of_object.get_joint_limits(container_joint_name)[0]
@@ -211,15 +231,16 @@ class DefaultClose(ProcessModule):
 
         _move_arm_tcp(goal_pose, World.robot, desig.arm)
 
-        desig.object_part.world_object.set_joint_position(container_joint_name, lower_joint_limit)
+        part_of_object.set_joint_position(container_joint_name, lower_joint_limit)
 
 
-def _move_arm_tcp(target: Pose, robot: Object, arm: Arms) -> None:
-    gripper = RobotDescription.current_robot_description.get_arm_chain(arm).get_tool_frame()
+def _move_arm_tcp(target: Pose, robot: Object, arm: Arms, tip_link:str=None) -> None:
+    if tip_link is None:
+        tip_link = RobotDescription.current_robot_description.get_arm_chain(arm).get_tool_frame()
 
     joints = RobotDescription.current_robot_description.get_arm_chain(arm).joints
 
-    inv = request_ik(target, robot, joints, gripper)
+    inv = request_ik(target, robot, joints, tip_link)
     _apply_ik(robot, inv)
 
 
@@ -278,13 +299,13 @@ class DefaultDetectingReal(ProcessModule):
                 obj_name = obj_type + "" + str(get_time())
                 # Check if there are any matches
                 if matching_classes:
-                    rospy.loginfo(f"Matching class names: {matching_classes}")
+                    loginfo(f"Matching class names: {matching_classes}")
                     obj_type = matching_classes[0]
                 else:
-                    rospy.loginfo(f"No class name contains the string '{obj_type}'")
+                    loginfo(f"No class name contains the string '{obj_type}'")
                     obj_type = Genobj
                 gen_obj_desc = GenericObjectDescription(obj_name, [0, 0, 0], hsize)
-                color = map_color_names_to_rgba(obj_color)
+                color = Colors.from_string(obj_color)
                 generic_obj = Object(name=obj_name, concept=obj_type, path=None, description=gen_obj_desc, color=color)
 
                 generic_obj.set_pose(obj_pose)
@@ -299,6 +320,7 @@ class DefaultDetectingReal(ProcessModule):
 
             return object_dict
 
+
 class DefaultNavigationReal(ProcessModule):
     """
     Process module for the real robot that sends a cartesian goal to giskard to move the robot base
@@ -309,6 +331,7 @@ class DefaultNavigationReal(ProcessModule):
         query_pose_nav(designator.target)
         if not World.current_world.robot.pose.almost_equal(designator.target, 0.05, 3):
             raise NavigationGoalNotReachedError(World.current_world.robot.pose, designator.target)
+
 
 class DefaultMoveHeadReal(ProcessModule):
     """
@@ -321,18 +344,40 @@ class DefaultMoveHeadReal(ProcessModule):
         robot = World.robot
 
         local_transformer = LocalTransformer()
-        pose_in_pan = local_transformer.transform_pose(target, robot.get_link_tf_frame("head_pan_link"))
-        pose_in_tilt = local_transformer.transform_pose(target, robot.get_link_tf_frame("head_tilt_link"))
+        neck = RobotDescription.current_robot_description.get_neck()
+        pan_link = neck["yaw"][0]
+        tilt_link = neck["pitch"][0]
 
-        new_pan = np.arctan2(pose_in_pan.position.y, pose_in_pan.position.x)
-        new_tilt = np.arctan2(pose_in_tilt.position.z, np.sqrt(pose_in_tilt.position.x ** 2 + pose_in_tilt.position.y ** 2)) * -1
+        pan_joint = neck["yaw"][1]
+        tilt_joint = neck["pitch"][1]
 
-        current_pan = robot.get_joint_position("head_pan_joint")
-        current_tilt = robot.get_joint_position("head_tilt_joint")
+        pose_in_pan = local_transformer.transform_pose(target, robot.get_link_tf_frame(pan_link)).position_as_list()
+        pose_in_tilt = local_transformer.transform_pose(target, robot.get_link_tf_frame(tilt_link)).position_as_list()
+
+        new_pan = np.arctan2(pose_in_pan[1], pose_in_pan[0])
+
+        tilt_offset = RobotDescription.current_robot_description.get_offset(tilt_joint)
+        if tilt_offset:
+            tilt_offset_rotation = tilt_offset.pose.orientation
+            quaternion_list = [tilt_offset_rotation.x, tilt_offset_rotation.y, tilt_offset_rotation.z, tilt_offset_rotation.w]
+        else:
+            quaternion_list = [0, 0, 0, 1]
+
+        tilt_offset_rotation = euler_from_quaternion(quaternion_list, axes='sxyz')
+        adjusted_pose_in_tilt = R.from_euler('xyz', tilt_offset_rotation).apply(pose_in_tilt)
+
+        new_tilt = -np.arctan2(adjusted_pose_in_tilt[2],
+                               np.sqrt(adjusted_pose_in_tilt[0] ** 2 + adjusted_pose_in_tilt[1] ** 2))
+
+        if RobotDescription.current_robot_description.name in {"iCub", "tiago_dual"}:
+            new_tilt = -new_tilt
+
+        current_pan = robot.get_joint_position(pan_joint)
+        current_tilt = robot.get_joint_position(tilt_joint)
 
         giskard.avoid_all_collisions()
-        giskard.achieve_joint_goal({"head_pan_joint": new_pan + current_pan,
-                                    "head_tilt_joint": new_tilt + current_tilt})
+        giskard.achieve_joint_goal({pan_joint: new_pan + current_pan,
+                                    tilt_joint: new_tilt + current_tilt})
 
 
 class DefaultMoveTCPReal(ProcessModule):
@@ -362,7 +407,6 @@ class DefaultMoveTCPReal(ProcessModule):
                                            use_monitor=designator.monitor_motion)
         if not World.current_world.robot.get_link_pose(tip_link).almost_equal(designator.target, 0.01, 3):
             raise ToolPoseNotReachedError(World.current_world.robot.get_link_pose(tip_link), designator.target)
-
 
 
 class DefaultMoveArmJointsReal(ProcessModule):

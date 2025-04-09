@@ -3,8 +3,8 @@ from ..datastructures.enums import GripperState, Arms, ExecutionType
 from ..datastructures.world import World
 from ..designators.motion_designator import MoveGripperMotion
 from ..process_module import ProcessModule, ProcessModuleManager
-from ..ros.data_types import Duration
-from ..ros.logging import loginfo, logwarn, logdebug
+from ..ros import Duration, create_action_client
+from ..ros import  loginfo, logwarn, logdebug
 
 try:
     from pr2_controllers_msgs.msg import Pr2GripperCommandGoal, Pr2GripperCommandAction, Pr2
@@ -54,7 +54,7 @@ class Pr2MoveGripperMultiverse(ProcessModule):
             controller_topic = "/real/pr2/right_gripper_controller/gripper_cmd"
         else:
             controller_topic = "/real/pr2/left_gripper_controller/gripper_cmd"
-        client = actionlib.SimpleActionClient(controller_topic, GripperCommandAction)
+        client = create_action_client(controller_topic, GripperCommandAction)
         loginfo("Waiting for action server")
         client.wait_for_server()
         client.send_goal(goal, active_cb=activate_callback, done_cb=done_callback, feedback_cb=feedback_callback)
@@ -83,7 +83,7 @@ class Pr2MoveGripperReal(ProcessModule):
             controller_topic = "r_gripper_controller/gripper_action"
         else:
             controller_topic = "l_gripper_controller/gripper_action"
-        client = actionlib.SimpleActionClient(controller_topic, Pr2GripperCommandAction)
+        client = create_action_client(controller_topic, Pr2GripperCommandAction)
         loginfo("Waiting for action server")
         client.wait_for_server()
         client.send_goal(goal, active_cb=activate_callback, done_cb=done_callback, feedback_cb=feedback_callback)

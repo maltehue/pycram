@@ -1,8 +1,8 @@
 from typing_extensions import Optional, Dict
 
-from .base import RobotState, Designator, MapperArgsMixin, PoseMixin
+from .base import RobotState, Designator, MapperArgsMixin, PoseMixin, GraspMixin
 from .object_designator import ObjectMixin
-from ..datastructures.enums import Arms, GripperState, Grasp, DetectionTechnique, DetectionState
+from ..datastructures.enums import Arms, GripperState, DetectionTechnique, DetectionState, TorsoState
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, JSON
 
@@ -37,7 +37,7 @@ class MoveTorsoAction(Action):
     """ORM Class of pycram.designators.action_designator.MoveTorsoAction."""
 
     id: Mapped[int] = mapped_column(ForeignKey(f'{Action.__tablename__}.id'), primary_key=True, init=False)
-    joint_positions: Mapped[Optional[Dict[str, float]]] = mapped_column(JSON)
+    torso_state: Mapped[TorsoState] = mapped_column(default=None)
 
 
 class SetGripperAction(Action):
@@ -64,13 +64,18 @@ class GripAction(ObjectMixin, Action):
     # TODO grasped_object
 
 
-class PickUpAction(ObjectMixin, Action):
+class ReachToPickUpAction(ObjectMixin, GraspMixin, Action):
+    """ORM Class of pycram.designators.action_designator.ReachToPickUpAction."""
+
+    id: Mapped[int] = mapped_column(ForeignKey(f'{Action.__tablename__}.id'), primary_key=True, init=False)
+    arm: Mapped[Arms]
+
+
+class PickUpAction(ObjectMixin, GraspMixin, Action):
     """ORM Class of pycram.designators.action_designator.PickUpAction."""
 
     id: Mapped[int] = mapped_column(ForeignKey(f'{Action.__tablename__}.id'), primary_key=True, init=False)
     arm: Mapped[Arms]
-    grasp: Mapped[Grasp]
-    prepose_distance: Mapped[float]
 
 
 class PlaceAction(PoseMixin, ObjectMixin, Action):
@@ -85,7 +90,6 @@ class TransportAction(PoseMixin, ObjectMixin, Action):
 
     id: Mapped[int] = mapped_column(ForeignKey(f'{Action.__tablename__}.id'), primary_key=True, init=False)
     arm: Mapped[Arms]
-    pickup_prepose_distance: Mapped[float]
 
 
 class LookAtAction(PoseMixin, Action):

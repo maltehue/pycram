@@ -7,9 +7,12 @@ from abc import ABC, abstractmethod
 
 import trimesh
 from geometry_msgs.msg import Point
-from trimesh.parent import Geometry3D
-from typing_extensions import Tuple, Union, Any, List, Optional, Dict, TYPE_CHECKING, Self, Sequence
+from trimesh import Trimesh
+from typing_extensions import Tuple, Union, Any, List, Optional, Dict, TYPE_CHECKING, Self, Type
 
+import pycrap
+import pycrap.ontologies
+from pycrap.ontologies import Base, has_child_link, has_parent_link
 from .datastructures.dataclasses import JointState, AxisAlignedBoundingBox, Color, LinkState, VisualShape, \
     MeshVisualShape, RotatedBoundingBox
 from .datastructures.enums import JointType
@@ -17,7 +20,7 @@ from .datastructures.pose import Pose, Transform
 from .datastructures.world_entity import WorldEntity, PhysicalBody
 from .failures import ObjectDescriptionNotFound, LinkHasNoGeometry, LinkGeometryHasNoMesh
 from .local_transformer import LocalTransformer
-from .ros.logging import logwarn_once
+from .ros import logwarn_once, logwarn
 
 if TYPE_CHECKING:
     from .world_concepts.world_object import Object
@@ -57,7 +60,7 @@ class LinkDescription(EntityDescription):
     """
 
     def __init__(self, parsed_link_description: Any, mesh_dir: Optional[str] = None):
-        self.parsed_description = parsed_link_description
+        super().__init__(parsed_link_description)
         self.mesh_dir = mesh_dir
 
     @property
@@ -192,13 +195,25 @@ class Link(PhysicalBody, ObjectEntity, LinkDescription, ABC):
     A link of an Object in the World.
     """
 
-    def __init__(self, _id: int, link_description: LinkDescription, obj: Object):
-        PhysicalBody.__init__(self, _id, obj.world)
+    def __init__(self, _id: int, link_description: LinkDescription, obj: Object,
+                 concept: Type[Base] = pycrap.ontologies.Link, parse_name: bool = True):
+        self.description = link_description
+        PhysicalBody.__init__(self, _id, obj.world, concept=concept, parse_name=parse_name)
         ObjectEntity.__init__(self, obj)
         LinkDescription.__init__(self, link_description.parsed_description, link_description.mesh_dir)
-        self.description = link_description
         self.local_transformer: LocalTransformer = LocalTransformer()
         self.constraint_ids: Dict[Link, int] = {}
+
+    def reset(self):
+        """
+        Reset the link to its initial state.
+        """
+        self.constraint_ids = {}
+        self.reset_concepts()
+
+    @property
+    def parts(self) -> Dict[str, PhysicalBody]:
+        return {}
 
     @property
     def parent_entity(self) -> Object:
@@ -214,9 +229,9 @@ class Link(PhysicalBody, ObjectEntity, LinkDescription, ABC):
         """
         return self.description.name
 
-    def get_axis_aligned_bounding_box(self, transform_to_link_pose: bool = True) -> AxisAlignedBoundingBox:
+    def get_axis_aligned_bounding_box(self, shift_to_link_position: bool = True) -> AxisAlignedBoundingBox:
         """
-        :param transform_to_link_pose: If True, return the bounding box transformed to the link pose.
+        :param shift_to_link_position: If True, return the bounding box transformed to the link pose.
         :return: The axis-aligned bounding box of a link. First try to get it from the simulator, if not,
          then calculate it depending on the type of the link geometry.
         """
@@ -224,8 +239,8 @@ class Link(PhysicalBody, ObjectEntity, LinkDescription, ABC):
             return self.world.get_link_axis_aligned_bounding_box(self)
         except NotImplementedError:
             bounding_box = self.get_axis_aligned_bounding_box_from_geometry()
-            if transform_to_link_pose:
-                return bounding_box.get_transformed_box(self.transform)
+            if shift_to_link_position:
+                return bounding_box.shift_by(self.pose.position)
             else:
                 return bounding_box
 
@@ -237,33 +252,34 @@ class Link(PhysicalBody, ObjectEntity, LinkDescription, ABC):
         try:
             return self.world.get_link_rotated_bounding_box(self)
         except NotImplementedError:
-            return RotatedBoundingBox.from_axis_aligned_bounding_box(self.get_axis_aligned_bounding_box(),
-                                                                     self.transform)
+            return self.get_axis_aligned_bounding_box_from_geometry().get_rotated_box(self.transform)
 
     def get_axis_aligned_bounding_box_from_geometry(self) -> AxisAlignedBoundingBox:
         if isinstance(self.geometry, List):
-            all_boxes = [geom.get_axis_aligned_bounding_box(self.get_mesh_path(geom))
+            all_boxes = [geom.get_axis_aligned_bounding_box(self.get_mesh_path([geom])[0])
                          if isinstance(geom, MeshVisualShape) else geom.get_axis_aligned_bounding_box()
                          for geom in self.geometry
                          ]
             bounding_box = AxisAlignedBoundingBox.from_multiple_bounding_boxes(all_boxes)
         else:
             geom = self.geometry
-            bounding_box = geom.get_axis_aligned_bounding_box(self.get_mesh_path(geom)) \
+            bounding_box = geom.get_axis_aligned_bounding_box(self.get_mesh_path([geom])[0]) \
                 if isinstance(geom, MeshVisualShape) else geom.get_axis_aligned_bounding_box()
         return bounding_box
 
-    def get_convex_hull(self) -> Geometry3D:
+    def get_convex_hull(self) -> Trimesh:
         """
         :return: The convex hull of the link geometry.
         """
         try:
             return self.world.get_body_convex_hull(self)
         except NotImplementedError:
-            if isinstance(self.geometry, MeshVisualShape):
-                mesh_path = self.get_mesh_path(self.geometry)
-                mesh = trimesh.load(mesh_path)
-                return trimesh.convex.convex_hull(mesh).apply_transform(self.transform.get_homogeneous_matrix())
+
+            if len(self.geometry) > 0 and isinstance(self.geometry[0], MeshVisualShape):
+                mesh_paths = self.get_mesh_path(self.geometry)
+                meshes = [trimesh.load_mesh(mesh_path) for mesh_path in mesh_paths]
+                mesh = meshes[0].union(meshes[1:]) if len(meshes) > 1 else meshes[0]
+                return mesh.convex_hull.apply_transform(self.transform.get_homogeneous_matrix())
             else:
                 raise LinkGeometryHasNoMesh(self.name, type(self.geometry).__name__)
 
@@ -274,12 +290,16 @@ class Link(PhysicalBody, ObjectEntity, LinkDescription, ABC):
         hull = self.get_convex_hull()
         hull.show()
 
-    def get_mesh_path(self, geometry: MeshVisualShape) -> str:
+    def get_mesh_path(self, geometry: Optional[List[MeshVisualShape]] = None) -> List[str]:
         """
-        :param geometry: The geometry for which the mesh path should be returned.
-        :return: The path of the mesh file of this link if the geometry is a mesh.
+        :param geometry: The geometry/geometries for which the mesh path(s) should be returned.
+        :return: The path(s) of the mesh file(s) of this link if the geometry is a mesh.
         """
-        return self.get_mesh_filename(geometry)
+        if geometry is None:
+            geometry = self.geometry
+        if not hasattr(geometry, "__iter__"):
+            geometry = [geometry]
+        return [self.get_mesh_filename(geom) for geom in geometry if isinstance(geom, MeshVisualShape)]
 
     def get_mesh_filename(self, geometry: MeshVisualShape) -> str:
         """
@@ -357,7 +377,7 @@ class Link(PhysicalBody, ObjectEntity, LinkDescription, ABC):
         return all([link.world == other_link.world for link, other_link in zip(self.constraint_ids.keys(),
                                                                                other.constraint_ids.keys())])
 
-    def add_fixed_constraint_with_link(self, child_link: Self,
+    def add_fixed_constraint_with_link(self, child_link: Link,
                                        child_to_parent_transform: Optional[Transform] = None) -> int:
         """
         Add a fixed constraint between this link and the given link, to create attachments for example.
@@ -478,7 +498,11 @@ class RootLink(Link, ABC):
     """
 
     def __init__(self, obj: Object):
-        Link.__init__(self, obj.get_root_link_id(), obj.get_root_link_description(), obj)
+        Link.__init__(self, obj.get_root_link_id(), obj.get_root_link_description(), obj,
+                      concept=pycrap.ontologies.RootLink, parse_name=False)
+
+        if not self.world.is_prospection_world:
+            self.ontology_individual.is_part_of = [obj.ontology_individual]
 
     @property
     def tf_frame(self) -> str:
@@ -494,6 +518,13 @@ class RootLink(Link, ABC):
         """
         return self.object.pose
 
+    @pose.setter
+    def pose(self, pose: Pose) -> None:
+        """
+        Set the pose of the root link to the given pose by setting the pose of the object.
+        """
+        self.object.pose = pose
+
     def __copy__(self):
         return RootLink(self.object)
 
@@ -505,14 +536,28 @@ class Joint(WorldEntity, ObjectEntity, JointDescription, ABC):
 
     def __init__(self, _id: int,
                  joint_description: JointDescription,
-                 obj: Object, is_virtual: Optional[bool] = False):
-        WorldEntity.__init__(self, _id, obj.world)
+                 obj: Object, is_virtual: Optional[bool] = False,
+                 concept: Type[Base] = pycrap.ontologies.Joint):
+        self.description = joint_description
+        WorldEntity.__init__(self, _id, obj.world, concept=concept, parse_name=False)
         ObjectEntity.__init__(self, obj)
         JointDescription.__init__(self, joint_description.parsed_description, is_virtual)
-        self.description = joint_description
+
         self.acceptable_error = (self.world.conf.revolute_joint_position_tolerance if self.type == JointType.REVOLUTE
                                  else self.world.conf.prismatic_joint_position_tolerance)
         self._update_position()
+        self._update_ontology_data()
+
+    def _update_ontology_data(self):
+        """
+        Update the ontology data of this joint and its parent and child links.
+        """
+        if self.world.is_prospection_world:
+            return
+        self.ontology_individual.is_a = [has_child_link.some(self.child_link.ontology_individual)]
+        if self.parent_link.ontology_individual:
+            self.ontology_individual.is_a = [has_parent_link.some(self.parent_link.ontology_individual)]
+            self.child_link.ontology_individual.is_part_of = [self.parent_link.ontology_individual]
 
     @property
     def name(self) -> str:
@@ -590,10 +635,10 @@ class Joint(WorldEntity, ObjectEntity, JointDescription, ABC):
         if self.has_limits:
             low_lim, up_lim = self.limits
             if not low_lim <= joint_position <= up_lim:
-                logging.warning(
+                logwarn(
                     f"The joint position has to be within the limits of the joint. The joint limits for {self.name}"
                     f" are {low_lim} and {up_lim}")
-                logging.warning(f"The given joint position was: {joint_position}")
+                logwarn(f"The given joint position was: {joint_position}")
                 # Temporarily disabled because kdl outputs values exciting joint limits
                 # return
         self.reset_position(joint_position)
@@ -657,8 +702,8 @@ class ObjectDescription(EntityDescription):
         self._link_map: Optional[Dict[str, Any]] = None
         self._joint_map: Optional[Dict[str, Any]] = None
         self.original_path: Optional[str] = path
-
         if path:
+            self.xml_path = path if path.endswith((".xml", ".urdf", ".xml")) else None
             self.update_description_from_file(path)
         else:
             self._parsed_description = None
@@ -725,12 +770,40 @@ class ObjectDescription(EntityDescription):
         """
         pass
 
+    @abstractmethod
+    def merge_description(self, other: ObjectDescription, parent_link: Optional[str] = None,
+                          child_link: Optional[str] = None,
+                          joint_type: JointType = JointType.FIXED,
+                          axis: Optional[Point] = None,
+                          lower_limit: Optional[float] = None, upper_limit: Optional[float] = None,
+                          child_pose_wrt_parent: Optional[Pose] = None,
+                          in_place: bool = False,
+                          new_description_file: Optional[str] = None) -> Union[ObjectDescription, Self]:
+        """
+        Merge the description of this object with the description of the other object.
+
+        :param other: The object description to merge with this one.
+        :param parent_link: The name of the parent link of the joint connecting the two objects.
+        :param child_link: The name of the child link of the joint connecting the two objects.
+        :param joint_type: The type of the joint connecting the two objects.
+        :param axis: The axis of the joint connecting the two objects.
+        :param lower_limit: The lower limit of the joint connecting the two objects.
+        :param upper_limit: The upper limit of the joint connecting the two objects.
+        :param child_pose_wrt_parent: The pose of the child link with respect to the parent link.
+        :param in_place: True if the merge should be done in place, False otherwise.
+        :param new_description_file: If given, the new description will be saved to this file, otherwise the new
+            description will be saved in place of the original file.
+        :return: The merged object description, could be a new object description if in_place is False else self.
+        """
+        pass
+
     def update_description_from_file(self, path: str) -> None:
         """
         Update the description of this object from the file at the given path.
 
         :param path: The path of the file to update from.
         """
+        self.xml_path = path
         self._parsed_description = self.load_description(path)
 
     def update_description_from_string(self, description_string: str) -> None:
@@ -799,9 +872,17 @@ class ObjectDescription(EntityDescription):
                 if mesh_transform is not None:
                     transform = mesh_transform.get_homogeneous_matrix()
                     mesh.apply_transform(transform)
-                path = path.replace(extension, ".obj")
+
+                root_dir = os.path.dirname(path)
+                object_name = os.path.basename(path).split('.')[0]
+
+                new_dir_name = f"converted_{object_name}"
+                path = os.path.join(root_dir, new_dir_name, object_name+".obj")
+
+                if not os.path.exists(path):
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
                 mesh.export(path)
-            self.generate_from_mesh_file(path, name, save_path=save_path, color=color, scale=scale_mesh)
+            self.generate_from_mesh_file(path, name, save_path=save_path, color=color)
         elif extension == self.get_file_extension():
             self.generate_from_description_file(path, save_path=save_path)
         else:

@@ -1,19 +1,19 @@
 from ..robot_description import RobotDescription, KinematicChainDescription, EndEffectorDescription, \
     RobotDescriptionManager, CameraDescription
-from ..datastructures.enums import Arms, Grasp, GripperState, GripperType, TorsoState
-import rospkg
+from ..datastructures.enums import Arms, Grasp, GripperState, GripperType, TorsoState, StaticJointState
+from ..ros import get_ros_package_path
+from ..datastructures.dataclasses import VirtualMobileBaseJoints
 
-rospack = rospkg.RosPack()
-filename = rospack.get_path('pycram') + '/resources/robots/' + "Armar6" + '.urdf'
+filename = get_ros_package_path('pycram') + '/resources/robots/' + "Armar6" + '.urdf'
 
 armar_description = RobotDescription("Armar6", "world", "torso", "torso_joint",
-                                      filename)
+                                      filename, virtual_mobile_base_joints=VirtualMobileBaseJoints())
 
 ################################## Left Arm ##################################
 left_arm = KinematicChainDescription("left", "world", "arm_t8_r0",
                                      armar_description.urdf_object, arm_type=Arms.LEFT)
 
-left_arm.add_static_joint_states("park", {"torso_joint": -0.15,
+left_arm.add_static_joint_states(StaticJointState.Park, {"torso_joint": -0.15,
                                           "arm_t12_joint_r0": 0,
                                           "arm_t23_joint_r0": 0,
                                           "arm_t34_joint_r0": 1.5,
@@ -65,7 +65,7 @@ left_arm.end_effector = left_gripper
 right_arm = KinematicChainDescription("right", "world", "arm_t8_r1",
                                       armar_description.urdf_object, arm_type=Arms.RIGHT)
 
-right_arm.add_static_joint_states("park", {"torso_joint": -0.15,
+right_arm.add_static_joint_states(StaticJointState.Park, {"torso_joint": -0.15,
                                            "arm_t12_joint_r1": 0,
                                            "arm_t23_joint_r1": 0,
                                            "arm_t34_joint_r1": 1.5,
@@ -114,32 +114,30 @@ right_gripper.end_effector_type = GripperType.FINGER
 right_arm.end_effector = right_gripper
 
 ################################## Torso ##################################
-torso = KinematicChainDescription("torso", "world", "torso",
+torso = KinematicChainDescription("torso", "platform", "torso",
                                   armar_description.urdf_object)
 
 torso.add_static_joint_states(TorsoState.HIGH, {"torso_joint": 0.0})
-
-torso.add_static_joint_states(TorsoState.MID, {"torso_joint": -0.15})
-
+torso.add_static_joint_states(TorsoState.MID, {'torso_joint': -0.185})
 torso.add_static_joint_states(TorsoState.LOW, {"torso_joint": -0.365})
 
 armar_description.add_kinematic_chain_description(torso)
 
 ################################## Camera ##################################
-camera = CameraDescription("Roboception", "Roboception", 1.8,
-                           2.1, 0.99483, 0.75049,
+camera = CameraDescription("Roboception", "Roboception", 1.371500015258789,
+                           1.7365000247955322, 0.99483, 0.75049,
                            [0, 0, 1])
 armar_description.add_camera_description(camera)
 
 ################################## Neck ##################################
 armar_description.add_kinematic_chain("neck", "lower_neck", "upper_neck")
-# armar_description.set_neck("neck_1_yaw", "neck_2_pitch")
+armar_description.set_neck(yaw_joint="neck_1_yaw", pitch_joint="neck_2_pitch")
 
 
 ################################# Grasps ##################################
 orientation = [0.707, 0.707, 0.707, 0.707]
-# right_gripper.generate_all_grasp_orientations(orientation)
-# left_gripper.generate_all_grasp_orientations(orientation)
+right_gripper.update_all_grasp_orientations(orientation)
+left_gripper.update_all_grasp_orientations(orientation)
 
 
 ################################# Additionals ##################################

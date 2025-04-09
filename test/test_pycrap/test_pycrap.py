@@ -1,8 +1,11 @@
 import unittest
+from unittest import skip
+
 import pycrap
 import inspect
 
-from pycrap import Ontology
+from pycrap.ontologies import Base, Cup
+from pycrap.ontology_wrapper import OntologyWrapper
 
 
 def recursive_subclasses(cls):
@@ -16,18 +19,13 @@ def recursive_subclasses(cls):
 class CrapTestCase(unittest.TestCase):
 
     def setUp(self):
-        self.ontology = Ontology()
+        self.ontology = OntologyWrapper()
 
-    def test_creation(self):
-        for cls in recursive_subclasses(pycrap.Base):
-            cls: pycrap.Base
-            cls.set_comment_to_docstring()
-        self.assertTrue(len(pycrap.PhysicalObject.comment) > 0)
-
+    @skip("Not working anymore as now we use one ontology")
     def test_multiple_worlds(self):
-        second_ontology = Ontology()
-        cup1 = pycrap.Cup(namespace=self.ontology.ontology)
-        cup2 = pycrap.Cup(namespace=second_ontology.ontology)
+        second_ontology = OntologyWrapper()
+        cup1 = Cup(namespace=self.ontology.ontology)
+        cup2 = Cup(namespace=second_ontology.ontology)
         self.assertEqual(len(list(self.ontology.individuals())), 1)
         self.assertEqual(len(list(second_ontology.individuals())), 1)
         self.assertNotEqual(cup1, cup2)

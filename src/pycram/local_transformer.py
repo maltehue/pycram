@@ -1,24 +1,135 @@
 from __future__ import annotations
 import sys
 import logging
+import numpy as np
+from .ros import Time, Duration, logerr
+from geometry_msgs.msg import TransformStamped, PoseStamped
+from transforms3d.quaternions import quat2mat, mat2quat
 
-from .ros.data_types import Time, Duration
-from .ros.logging import logerr
+from .tf_transformations import quaternion_matrix
 
 if 'world' in sys.modules:
     logging.warning("(publisher) Make sure that you are not loading this module from pycram.world.")
 
-from tf import TransformerROS
+class TransformerROS:
+    pass
 
 from .datastructures.pose import Pose, Transform
-from typing_extensions import List, Optional, Union, Iterable, TYPE_CHECKING
+from typing_extensions import List, Optional, Union, Iterable, TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:
     from .world_concepts.world_object import Object
     from .datastructures.world import World
 
 
-class LocalTransformer(TransformerROS):
+from tf2_ros import Buffer
+
+def _build_affine(
+        rotation: Optional[Iterable] = None,
+        translation: Optional[Iterable] = None) -> np.ndarray:
+    """
+    Build an affine matrix from a quaternion and a translation.
+
+    :param rotation: The quaternion as [w, x, y, z]
+    :param translation: The translation as [x, y, z]
+    :returns: The quaternion and the translation array
+    """
+    affine = np.eye(4)
+    if rotation is not None:
+        affine[:3, :3] = quat2mat(np.asarray(rotation))
+    if translation is not None:
+        affine[:3, 3] = np.asarray(translation)
+    return affine
+
+def _transform_to_affine(transform: TransformStamped) -> np.ndarray:
+    """
+    Convert a `TransformStamped` to a affine matrix.
+
+    :param transform: The transform that should be converted
+    :returns: The affine transform
+    """
+    transform = transform.transform
+    transform_rotation_matrix = [
+        transform.rotation.w,
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z
+    ]
+    transform_translation = [
+        transform.translation.x,
+        transform.translation.y,
+        transform.translation.z
+    ]
+    return _build_affine(transform_rotation_matrix, transform_translation)
+
+
+def _decompose_affine(affine: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Decompose an affine transformation into a quaternion and the translation.
+
+    :param affine: The affine transformation matrix
+    :returns: The quaternion and the translation array
+    """
+    return mat2quat(affine[:3, :3]), affine[:3, 3]
+
+# Pose
+def do_transform_pose(
+        pose: Pose,
+        transform: TransformStamped) -> Pose:
+    """
+    Transform a `Pose` using a given `TransformStamped`.
+
+    This method is used to share the tranformation done in
+    `do_transform_pose_stamped()` and `do_transform_pose_with_covariance_stamped()`
+
+    :param pose: The pose
+    :param transform: The transform
+    :returns: The transformed pose
+    """
+    quaternion, point = _decompose_affine(
+        np.matmul(
+            _transform_to_affine(transform),
+            _build_affine(
+                translation=[
+                    pose.position.x,
+                    pose.position.y,
+                    pose.position.z
+                ],
+                rotation=[
+                    pose.orientation.w,
+                    pose.orientation.x,
+                    pose.orientation.y,
+                    pose.orientation.z])))
+    res = Pose()
+    res.position.x = point[0]
+    res.position.y = point[1]
+    res.position.z = point[2]
+    res.orientation.w = quaternion[0]
+    res.orientation.x = quaternion[1]
+    res.orientation.y = quaternion[2]
+    res.orientation.z = quaternion[3]
+    return res
+
+
+# PoseStamped
+def do_transform_pose_stamped(
+        pose: PoseStamped,
+        transform: TransformStamped) -> PoseStamped:
+    """
+    Transform a `PoseStamped` using a given `TransformStamped`.
+
+    :param pose: The stamped pose
+    :param transform: The transform
+    :returns: The transformed pose stamped
+    """
+    res = PoseStamped()
+    res.pose = do_transform_pose(pose.pose, transform)
+    res.header = transform.header
+    return res
+
+
+
+class LocalTransformer(Buffer):
     """
     This class allows to use the TF class TransformerROS without using the ROS
     network system or the topic /tf, where transforms are usually published to.
@@ -44,7 +155,8 @@ class LocalTransformer(TransformerROS):
 
     def __init__(self):
         if self._initialized: return
-        super().__init__(interpolate=True, cache_time=Duration(10))
+        # super().__init__(interpolate=True, cache_time=Duration(10))
+        super().__init__(cache_time=Duration(10))
         # Since this file can't import world.py this holds the reference to the current_world
         self.world = None
         # TODO: Ask Jonas if this is still needed
@@ -52,6 +164,8 @@ class LocalTransformer(TransformerROS):
 
         # If the singelton was already initialized
         self._initialized = True
+        self.registration.add(Pose, do_transform_pose_stamped)
+        self.registration.add(PoseStamped, do_transform_pose_stamped)
 
     def transform_to_object_frame(self, pose: Pose,
                                   world_object: Object, link_name: str = None) -> Union[
@@ -92,12 +206,13 @@ class LocalTransformer(TransformerROS):
 
         copy_pose = pose.copy()
         copy_pose.header.stamp = Time(0)
-        if not self.canTransform(target_frame, pose.frame, Time(0)):
+        if not self.can_transform(target_frame, pose.frame, Time(0)):
             logerr(
                 f"Can not transform pose: \n {pose}\n to frame: {target_frame}."
                 f"\n Maybe try calling 'update_transforms_for_object'")
             return
-        new_pose = super().transformPose(target_frame, copy_pose)
+        # new_pose = super().transformPose(target_frame, copy_pose)
+        new_pose = self.transform(copy_pose.to_pose_stamped(), target_frame)
 
         copy_pose.pose = new_pose.pose
         copy_pose.header.frame_id = new_pose.header.frame_id
@@ -117,6 +232,25 @@ class LocalTransformer(TransformerROS):
         world = self.get_world_from_frame(frame)
         found_objects = [obj for obj in world.objects if frame == obj.tf_frame]
         return found_objects[0] if len(found_objects) > 0 else self.get_object_from_link_frame(frame)
+
+    def translate_pose_along_local_axis(self, pose: Pose, axis: List, distance: float) -> Pose:
+        """
+        Translate a pose along a given 3d vector (axis) by a given distance. The axis is given in the local coordinate
+        frame of the pose. The axis is normalized and then scaled by the distance.
+
+        :param pose: The pose that should be translated
+        :param axis: The local axis along which the translation should be performed
+        :param distance: The distance by which the pose should be translated
+
+        :return: The translated pose
+        """
+        normalized_translation_vector = np.array(axis) / np.linalg.norm(axis)
+
+        rot_matrix = quaternion_matrix(pose.orientation_as_list())[:3, :3]
+        translation_in_world = rot_matrix @ normalized_translation_vector
+        scaled_translation_vector = np.array(pose.position_as_list()) + translation_in_world * distance
+
+        return Pose(scaled_translation_vector, pose.orientation_as_list(), pose.frame, pose.header.stamp)
 
     def get_object_from_link_frame(self, link_frame: str) -> Optional[Object]:
         """
@@ -152,9 +286,11 @@ class LocalTransformer(TransformerROS):
         objects = list(map(self.get_object_from_frame, [source_frame, target_frame]))
         self.update_transforms_for_objects([obj for obj in objects if obj is not None])
 
-        tf_time = time if time else self.getLatestCommonTime(source_frame, target_frame)
-        translation, rotation = self.lookupTransform(source_frame, target_frame, tf_time)
-        return Transform(translation, rotation, source_frame, target_frame)
+        tf_time = time if time else self.get_latest_common_time(source_frame, target_frame)
+        transform_stamped = self.lookup_transform(source_frame, target_frame, tf_time)
+        return Transform(transform_stamped.transform.translation,
+                         transform_stamped.transform.rotation,
+                         source_frame, target_frame)
 
     def update_transforms(self, transforms: Iterable[Transform], time: Time = None) -> None:
         """
@@ -164,19 +300,12 @@ class LocalTransformer(TransformerROS):
         time = time if time else Time().now()
         for transform in transforms:
             transform.header.stamp = time
-            self.setTransform(transform)
+            self.set_transform(transform, "pycram/local_transformer")
 
     def get_all_frames(self) -> List[str]:
         """
         :return: A list of all known coordinate frames as a list with human-readable entries.
         """
-        frames = self.allFramesAsString().split("\n")
+        frames = self.all_frames_as_string().split("\n")
         frames.remove("")
         return frames
-
-    def transformPose(self, target_frame, ps) -> Pose:
-        """
-        Alias for :func:`~LocalTransformer.transform_pose_to_target_frame` to avoid confusion since a similar method
-         exists in the super class.
-        """
-        return self.transform_pose(ps, target_frame)

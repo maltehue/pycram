@@ -1,33 +1,28 @@
 from __future__ import annotations
 
-import logging
 import os
-from functools import cached_property
 from pathlib import Path
 
 import numpy as np
-import owlready2
 from deprecated import deprecated
 from geometry_msgs.msg import Point, Quaternion
 from trimesh.parent import Geometry3D
 from typing_extensions import Type, Optional, Dict, Tuple, List, Union
 
-import pycrap
 from ..datastructures.dataclasses import (Color, ObjectState, LinkState, JointState,
                                           AxisAlignedBoundingBox, VisualShape, ClosestPointsList,
-                                          ContactPointsList, RotatedBoundingBox, VirtualJoint)
+                                          ContactPointsList, RotatedBoundingBox, VirtualJoint, FrozenObject, FrozenLink, FrozenJoint)
 from ..datastructures.enums import ObjectType, JointType
 from ..datastructures.pose import Pose, Transform
 from ..datastructures.world import World
-from ..datastructures.world_entity import PhysicalBody, WorldEntity
+from ..datastructures.world_entity import PhysicalBody
 from ..description import ObjectDescription, LinkDescription, Joint
-from ..failures import ObjectAlreadyExists, WorldMismatchErrorBetweenObjects, UnsupportedFileExtension, \
+from ..failures import ObjectAlreadyExists, WorldMismatchErrorBetweenAttachedObjects, UnsupportedFileExtension, \
     ObjectDescriptionUndefined
 from ..local_transformer import LocalTransformer
 from ..object_descriptors.generic import ObjectDescription as GenericObjectDescription
 from ..object_descriptors.urdf import ObjectDescription as URDF
-from ..ros.data_types import Time
-from ..ros.logging import logwarn
+from ..ros import logwarn, logerr, Time
 
 try:
     from ..object_descriptors.mjcf import ObjectDescription as MJCF
@@ -35,8 +30,8 @@ except ImportError:
     MJCF = None
 from ..robot_description import RobotDescriptionManager, RobotDescription
 from ..world_concepts.constraints import Attachment
-from ..datastructures.mixins import HasConcept
-from pycrap import PhysicalObject, ontology, Base, Agent
+from pycrap.ontologies import PhysicalObject, Joint, \
+    Robot, Floor, Location, Bowl, Spoon, Cereal
 
 Link = ObjectDescription.Link
 
@@ -55,6 +50,8 @@ class Object(PhysicalBody):
     """
     A dictionary that maps the file extension to the corresponding ObjectDescription type.
     """
+
+    ontology_concept: Type[PhysicalObject] = PhysicalObject
 
     def __init__(self, name: str, concept: Type[PhysicalObject], path: Optional[str] = None,
                  description: Optional[ObjectDescription] = None,
@@ -83,16 +80,12 @@ class Object(PhysicalBody):
         :param scale_mesh: The scale of the mesh.
         """
 
-        super().__init__(-1, world if world is not None else World.current_world)
+        self.world = world if world is not None else World.current_world
+        self.name: str = name
+        super().__init__(-1, self.world, concept=concept)
 
         pose = Pose() if pose is None else pose
 
-        # set ontology related information
-        self.ontology_concept = concept
-        if not self.world.is_prospection_world:
-            self.ontology_individual = self.ontology_concept(namespace=self.world.ontology.ontology)
-
-        self.name: str = name
         self.path: Optional[str] = path
 
         self._resolve_description(path, description)
@@ -112,9 +105,8 @@ class Object(PhysicalBody):
                                                                                  color=color)
 
             self.description.update_description_from_file(self.path)
-
         # if the object is an agent in the belief state
-        if Agent in self.ontology_concept.is_a and not self.world.is_prospection_world:
+        if self.is_a_robot and not self.world.is_prospection_world:
             self._update_world_robot_and_description()
 
         self.id = self._spawn_object_and_get_id()
@@ -132,6 +124,10 @@ class Object(PhysicalBody):
         self.attachments: Dict[Object, Attachment] = {}
 
         self.world.add_object(self)
+
+    @property
+    def parts(self) -> Dict[str, PhysicalBody]:
+        return self.links
 
     @property
     def tf_frame(self) -> str:
@@ -180,11 +176,11 @@ class Object(PhysicalBody):
                 for link_name, color in rgba_color.items():
                     self.links[link_name].color = color
 
-    def get_mesh_path(self) -> str:
+    def get_mesh_path(self) -> List[str]:
         """
         Get the path to the mesh file of the object.
 
-        :return: The path to the mesh file.
+        :return: The path(s) to the mesh file(s).
         """
         if self.has_one_link:
             return self.root_link.get_mesh_path()
@@ -387,9 +383,9 @@ class Object(PhysicalBody):
             return obj_id
 
         except Exception as e:
-            logging.error(
-                "The File could not be loaded. Please note that the path has to be either a URDF, stl or obj file or"
-                " the name of an URDF string on the parameter server.")
+            logerr(
+                f"The caught error: {e}, The File could not be loaded. Please note that the path has to be either"
+                f" a URDF, stl or obj file or the name of an URDF string on the parameter server.")
             os.remove(path)
             raise e
 
@@ -456,7 +452,8 @@ class Object(PhysicalBody):
         for joint_name, joint_id in self.joint_name_to_id.items():
             parsed_joint_description = self.description.get_joint_by_name(joint_name)
             is_virtual = self.is_joint_virtual(joint_name)
-            self.joints[joint_name] = self.description.Joint(joint_id, parsed_joint_description, self, is_virtual)
+            self.joints[joint_name] = self.description.Joint(joint_id, parsed_joint_description, self,
+                                                             is_virtual=is_virtual)
 
     def is_joint_virtual(self, name: str):
         """
@@ -563,7 +560,8 @@ class Object(PhysicalBody):
         """
         return self.links[link_name].tf_frame
 
-    def get_link_axis_aligned_bounding_box(self, link_name: str, transform_to_link_pose: bool = True) -> AxisAlignedBoundingBox:
+    def get_link_axis_aligned_bounding_box(self, link_name: str,
+                                           transform_to_link_pose: bool = True) -> AxisAlignedBoundingBox:
         """
         Return the axis aligned bounding box of the link with the given name.
 
@@ -600,14 +598,23 @@ class Object(PhysicalBody):
         """
         self.links[link_name].color = Color.from_list(color)
 
-    def get_link_geometry(self, link_name: str) -> Union[VisualShape, None]:
+    def get_link_geometry(self, link_name: str) -> List[VisualShape]:
         """
-        Return the geometry of the link with the given name.
+        Return the collision geometry of the link with the given name.
 
         :param link_name: The name of the link.
-        :return: The geometry of the link.
+        :return: List of the collision geometry of the link.
         """
         return self.links[link_name].geometry
+
+    def get_link_visual_geometry(self, link_name: str) -> List[VisualShape]:
+        """
+        Return the visual geometry of the link with the given name.
+
+        :param link_name: The name of the link.
+        :return: The visual geometry of the link.
+        """
+        return self.links[link_name].visual_geometry
 
     def get_link_transform(self, link_name: str) -> Transform:
         """
@@ -646,20 +653,16 @@ class Object(PhysicalBody):
         return np.array(self.get_position_as_list()) - np.array(self.get_base_position_as_list())
 
     def __repr__(self):
-        skip_attr = ["links", "joints", "description", "attachments"]
-        return self.__class__.__qualname__ + f"(name={self.name}, object_type={self.obj_type.name}, file_path={self.path}, pose={self.pose}, world={self.world})"
-
+        return self.__class__.__qualname__ + (f"(name={self.name}, object_type={self.obj_type.name},"
+                                              f" file_path={self.path}, pose={self.pose}, world={self.world})")
 
     def remove(self) -> None:
         """
         Remove this object from the World it currently resides in.
         For the object to be removed it has to be detached from all objects it
-        is currently attached to. After this call world remove object
-        to remove this Object from the simulation/world.
+        is currently attached to. Then remove this Object from the simulation/world.
         """
-        # owlready2.destroy_entity(self.ontology_individual)
         self.world.remove_object(self)
-
 
     def reset(self, remove_saved_states=False) -> None:
         """
@@ -670,11 +673,28 @@ class Object(PhysicalBody):
 
         :param remove_saved_states: If True the saved states will be removed.
         """
+        self.reset_concepts()
         self.detach_all()
-        self.reset_all_joints_positions()
+        self.reset_all_links()
+        self.reset_all_joints()
         self.set_pose(self.original_pose)
         if remove_saved_states:
             self.remove_saved_states()
+
+    def reset_all_joints(self) -> None:
+        """
+        Reset all joints of the object.
+        """
+        for joint in self.joints.values():
+            joint.reset_concepts()
+        self.reset_all_joints_positions()
+
+    def reset_all_links(self) -> None:
+        """
+        Reset all links of the object.
+        """
+        for link in self.links.values():
+            link.reset()
 
     @property
     def is_an_environment(self) -> bool:
@@ -683,16 +703,39 @@ class Object(PhysicalBody):
 
         :return: True if the object is of type environment, False otherwise.
         """
-        return issubclass(self.obj_type, pycrap.Location) or issubclass(self.obj_type, pycrap.Floor)
+        return issubclass(self.obj_type, Location) or issubclass(self.obj_type, Floor)
 
     @property
     def is_a_robot(self) -> bool:
         """
         Check if the object is a robot.
-
+        TODO: Check if this is a the correct filter
         :return: True if the object is a robot, False otherwise.
         """
-        return issubclass(self.obj_type, pycrap.Robot)
+        return issubclass(self.obj_type, Robot)
+
+    def merge(self, other: Object, name: Optional[str] = None, pose: Optional[Pose] = None,
+              new_description_file: Optional[str] = None) -> Object:
+        """
+        Merge the object with another object. This is done by merging the descriptions of the objects,
+        removing the original objects creating a new merged object.
+
+        :param other: The object to merge with.
+        :param name: The name of the merged object.
+        :param pose: The pose of the merged object.
+        :param new_description_file: The new description file of the merged object.
+        :return: The merged object.
+        """
+        pose = self.pose if pose is None else pose
+        child_pose = self.local_transformer.transform_pose(other.pose, self.tf_frame)
+        description = self.description.merge_description(other.description, child_pose_wrt_parent=child_pose,
+                                                         new_description_file=new_description_file)
+        name = self.name if name is None else name
+        color = self.color if isinstance(self.color, Color) else self.color[self.root_link.name]
+        other.remove()
+        self.remove()
+        return Object(name, self.obj_type, description.xml_path, description=description, pose=pose, world=self.world,
+                      color=color)
 
     def attach(self,
                child_object: Object,
@@ -951,7 +994,7 @@ class Object(PhysicalBody):
         :return: The attachment transform.
         """
         if self.world != child_object.world:
-            raise WorldMismatchErrorBetweenObjects(self, child_object)
+            raise WorldMismatchErrorBetweenAttachedObjects(self, child_object)
         att_transform = attachment.parent_to_child_transform.copy()
         if self.world.is_prospection_world and not attachment.parent_object.world.is_prospection_world:
             att_transform.frame = self.tf_prospection_world_prefix + att_transform.frame
@@ -998,6 +1041,8 @@ class Object(PhysicalBody):
                 joint.current_state = joint_states[joint.id]
 
     def robot_virtual_move_base_joints_names(self):
+        if self.robot_description.virtual_mobile_base_joints is None:
+            return []
         return self.robot_description.virtual_mobile_base_joints.names
 
     def remove_saved_states(self) -> None:
@@ -1067,13 +1112,13 @@ class Object(PhysicalBody):
             pose.frame = position.frame
         elif isinstance(position, Point):
             target_position = position
-        elif isinstance(position, List):
+        elif isinstance(position, (List, np.ndarray, tuple)):
             if len(position) == 3:
-                target_position = Point(*position)
+                target_position = Point(**dict(zip(["x", "y", "z"], position)))
             else:
-                raise ValueError("The given position has to be a list of 3 values.")
+                raise ValueError("The given position has to be a sequence of 3 values.")
         else:
-            raise TypeError("The given position has to be a Pose, Point or an iterable of xyz values.")
+            raise TypeError("The given position has to be a Pose, Point or a sequence of xyz values.")
 
         pose.position = target_position
         pose.orientation = self.get_orientation()
@@ -1094,7 +1139,7 @@ class Object(PhysicalBody):
             target_orientation = orientation
         elif (isinstance(orientation, list) or isinstance(orientation, np.ndarray) or isinstance(orientation, tuple)) \
                 and len(orientation) == 4:
-            target_orientation = Quaternion(*orientation)
+            target_orientation = Quaternion(**dict(zip(["x", "y", "z", "w"], orientation)))
         else:
             raise TypeError("The given orientation has to be a Pose, Quaternion or one of list/tuple/ndarray of xyzw.")
 
@@ -1211,7 +1256,7 @@ class Object(PhysicalBody):
         """
         return {joint_name: np.clip(joint_position, self.joints[joint_name].lower_limit,
                                     self.joints[joint_name].upper_limit)
-                if self.joints[joint_name].has_limits else joint_position
+        if self.joints[joint_name].has_limits else joint_position
                 for joint_name, joint_position in joint_positions.items()}
 
     def get_joint_position(self, joint_name: str) -> float:
@@ -1295,23 +1340,30 @@ class Object(PhysicalBody):
         """
         return self.joints[joint_name].parent_link
 
-    def find_joint_above_link(self, link_name: str) -> str:
+    def find_joint_above_link(self, link_name: str, joint_type: Optional[JointType] = None) -> Optional[str]:
         """
-        Traverse the chain from 'link' to the URDF origin and return the first joint that is not FIXED.
+        Traverses the chain from 'link' to the URDF origin and returns the first joint that is of type 'joint_type'.
+        If no joint type is given, the first joint that is not FIXED is returned.
 
         :param link_name: AbstractLink name above which the joint should be found
-        :return: Name of the first non-fixed joint, None if no joint is found
+        :param joint_type: Joint type that should be searched for
+        :return: Name of the first joint which has the given type
         """
         chain = self.description.get_chain(self.description.get_root(), link_name)
         reversed_chain = reversed(chain)
-        container_joint = None
         for element in reversed_chain:
-            if element in self.joint_name_to_id and self.get_joint_type(element) != JointType.FIXED:
-                container_joint = element
-                break
-        if not container_joint:
-            logwarn(f"No movable parent joint found above link {link_name}")
-        return container_joint
+            if element not in self.joint_name_to_id:
+                continue
+
+            element_joint_type = self.get_joint_type(element)
+            if joint_type is not None and element_joint_type == joint_type:
+                return element
+
+            if joint_type is None and element_joint_type != JointType.FIXED:
+                return element
+
+        logwarn(f"No joint of type {joint_type} found above link {link_name}")
+        return None
 
     def get_multiple_joint_positions(self, joint_names: List[str]) -> Dict[str, float]:
         """
@@ -1401,15 +1453,15 @@ class Object(PhysicalBody):
         """
         return self.world.get_colors_of_object_links(self)
 
-    def get_axis_aligned_bounding_box(self, transform_to_object_pose: bool = True) -> AxisAlignedBoundingBox:
+    def get_axis_aligned_bounding_box(self, shift_to_object_position: bool = True) -> AxisAlignedBoundingBox:
         """
         Return the axis aligned bounding box of this object.
 
-        :param transform_to_object_pose: If True, the bounding box will be transformed to fit object pose.
+        :param shift_to_object_position: If True, the bounding box will be shifted to the object position.
         :return: The axis aligned bounding box of this object.
         """
         if self.has_one_link:
-            return self.root_link.get_axis_aligned_bounding_box(transform_to_object_pose)
+            return self.root_link.get_axis_aligned_bounding_box(shift_to_object_position)
         else:
             return self.world.get_object_axis_aligned_bounding_box(self)
 
@@ -1488,4 +1540,20 @@ class Object(PhysicalBody):
         :return: The parent of this object which is the world.
         """
         return self.world
+
+    def frozen_copy(self) -> FrozenObject:
+        """
+        Creates a copied version of this object which contains the information of this object but can not be interacted
+        with.
+
+        :return FrozenObject: The copied forzen object.
+        """
+        frozen_links = {l_name: FrozenLink(l.name, l.pose, l.geometry) for l_name, l in self.links.items()}
+        frozen_joints = {j_name: FrozenJoint(j.name, j.type, [j.child], j.parent, j.current_state.position) for j_name, j in self.joints.items()}
+
+        return FrozenObject(self.name, self.obj_type, self.path, self.description, self.pose,
+                            frozen_links, frozen_joints)
+
+    def insert(self, session):
+        pass
 

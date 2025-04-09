@@ -14,16 +14,87 @@ import math
 import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib.colors as mcolors
-from tf.transformations import quaternion_about_axis, quaternion_multiply
-from typing_extensions import Tuple, Callable, List, Dict, TYPE_CHECKING, Sequence
 
-from .datastructures.dataclasses import Color
+from .tf_transformations import quaternion_about_axis, quaternion_multiply
+from typing_extensions import Tuple, Callable, List, Dict, TYPE_CHECKING, Sequence, Any, Iterable, Optional
+
 from .datastructures.pose import Pose
 from .local_transformer import LocalTransformer
 
 if TYPE_CHECKING:
     from .world_concepts.world_object import Object
     from .robot_description import CameraDescription
+
+
+def get_rays_from_min_max(min_bound: Sequence[float], max_bound: Sequence[float], step_size_in_meters: float = 0.01) \
+        -> np.ndarray:
+    """
+    Get rays from min and max bounds as an array of start and end 3D points.
+    Note: The rays are not steped in the x direction as the rays are cast parallel to the x-axis.
+
+    Example:
+    >>> min_bound = [0, 0, 0]
+    >>> max_bound = [1, 2, 3]
+    >>> rays = get_rays_from_min_max(min_bound, max_bound, 1)
+    >>> rays.shape
+    (6, 3, 2)
+    >>> rays
+    array([
+    [[0. , 1. ],
+     [0. , 0. ],
+     [0. , 0. ]],
+    [[0. , 1. ],
+     [0. , 0. ],
+     [1.5, 1.5]],
+    [[0. , 1. ],
+     [0. , 0. ],
+     [3. , 3. ]],
+    [[0. , 1. ],
+     [2. , 2. ],
+     [0. , 0. ]],
+    [[0. , 1. ],
+     [2. , 2. ],
+     [1.5, 1.5]],
+    [[0. , 1. ],
+     [2. , 2. ],
+     [3. , 3. ]]
+     ])
+
+    :param min_bound: The minimum bound of the rays, a sequence of 3 floats.
+    :param max_bound: The maximum bound of the rays, a sequence of 3 floats.
+    :param step_size_in_meters: The step size in meters between the rays.
+    :return: The rays as an array of shape (n, 3, 2) where n is number of rays, 3 is because each point has x, y, and z,
+    and 2 is for the start and end points of the rays.
+    """
+    min_bound = np.array(min_bound)
+    max_bound = np.array(max_bound)
+    n_steps = np.ceil(np.abs(max_bound[1:] - min_bound[1:]) / step_size_in_meters).astype(int)
+    rays_start_x = np.ones((n_steps[0], n_steps[1])) * min_bound[0]
+    rays_end_x = np.ones((n_steps[0], n_steps[1])) * max_bound[0]
+    y_values = np.linspace(min_bound[1], max_bound[1], n_steps[0])
+    z_values = np.linspace(min_bound[2], max_bound[2], n_steps[1])
+    rays_start_y = np.tile(y_values, (n_steps[1], 1)).T
+    rays_end_y = rays_start_y
+    rays_start_z = np.tile(z_values, (n_steps[0], 1))
+    rays_end_z = rays_start_z
+    rays_start = np.stack((rays_start_x, rays_start_y, rays_start_z), axis=-1)
+    rays_end = np.stack((rays_end_x, rays_end_y, rays_end_z), axis=-1)
+    rays_start = rays_start.reshape(-1, 3)
+    rays_end = rays_end.reshape(-1, 3)
+    # The shape of rays is (num_rays, 3, 2), while num_rays = n_steps[0] (num y step) * n_steps[1] (num z step)
+    return np.stack((rays_start, rays_end), axis=-1)
+
+
+def chunks(lst: List, n: int) -> List:
+    """
+    Yield successive n-sized chunks from lst.
+
+    :param lst: The list from which chunks should be yielded
+    :param n: Size of the chunks
+    :return: A list of size n from lst
+    """
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 
 class bcolors:
@@ -190,24 +261,13 @@ def get_quaternion_between_camera_and_target(cam_pose: Pose, target_pose: Pose,
     front_facing_axis = front_facing_axis - np.array(cam_pose.position_as_list())
 
     # Get the vector from the camera to the target
-    camera_to_target = get_vector_between_poses(cam_pose, target_pose)
+    camera_to_target = cam_pose.get_vector_to_pose(target_pose)
 
     # Get the quaternion between the camera and target
     return get_quaternion_between_two_vectors(front_facing_axis, camera_to_target)
 
 
-def get_vector_between_poses(pose1: Pose, pose2: Pose) -> np.ndarray:
-    """
-    Get the vector between two poses.
-
-    :param pose1: The first pose.
-    :param pose2: The second pose.
-    :return: The vector between the two poses.
-    """
-    return np.array(pose2.position_as_list()) - np.array(pose1.position_as_list())
-
-
-def transform_vector_using_pose(vector: Sequence, pose: Pose) -> np.ndarray:
+def transform_vector_using_pose(vector: Sequence, pose) -> np.ndarray:
     """
     Transform a vector using a pose.
 
@@ -289,8 +349,10 @@ class RayTestUtils:
                                                                 camera_max_distance).tolist()
 
         # apply the ray test
-        object_ids, distances = self.ray_test_batch(rays_start_positions, rays_end_positions, return_distance=True)
+        ray_test_results = self.ray_test_batch(rays_start_positions, rays_end_positions, return_distance=True)
 
+        object_ids = [result.obj_id for result in ray_test_results]
+        distances = [result.distance for result in ray_test_results]
         # construct the images/masks
         segmentation_mask = self.construct_segmentation_mask_from_ray_test_object_ids(object_ids, size)
         depth_image = self.construct_depth_image_from_ray_test_distances(distances, size) + camera_min_distance
@@ -516,23 +578,103 @@ def xyzw_to_wxyz(xyzw: List[float]) -> List[float]:
     return [xyzw[3], *xyzw[:3]]
 
 
-def map_color_names_to_rgba(name: str) -> Color:
+def wxyz_to_xyzw_arr(wxyz: np.ndarray) -> np.ndarray:
     """
-    Maps a color name to its corresponding RGBA value.
+    Convert a quaternion from WXYZ to XYZW format.
 
-    :param name: The name of the color (e.g., "red", "blue").
-    :return: A list of RGBA values [R, G, B, A] where each component ranges from 0 to 1.
-             Returns [0, 0, 0, 1] (black) for unknown colors.
+    :param wxyz: The quaternion in WXYZ format.
     """
-    colors = {
-        "red": Color(1, 0, 0, 1),
-        "yellow": Color(1, 1, 0, 1),
-        "green": Color(0, 1, 0, 1),
-        "cyan": Color(0, 1, 1, 1),
-        "blue": Color(0, 0, 1, 1),
-        "magenta": Color(1, 0, 1, 1),
-        "white": Color(1, 1, 1, 1),
-        "black": Color(0, 0, 0, 1),
-        "grey": Color(0.5, 0.5, 0.5, 1),
-    }
-    return colors.get(name.lower(), Color(0, 0, 0, 1)).to_list()  # Fallback to black
+    xyzw = np.zeros(4)
+    xyzw[:3] = wxyz[1:]
+    xyzw[3] = wxyz[0]
+    return xyzw
+
+
+def xyzw_to_wxyz_arr(xyzw: np.ndarray) -> np.ndarray:
+    """
+    Convert a quaternion from XYZW to WXYZ format.
+
+    :param xyzw: The quaternion in XYZW format.
+    """
+    wxyz = np.zeros(4)
+    wxyz[0] = xyzw[3]
+    wxyz[1:] = xyzw[:3]
+    return wxyz
+
+
+
+class ClassPropertyDescriptor:
+    """
+    A helper that can be used to define properties of a class like the built-in ones but does not require the class
+    to be instantiated.
+    """
+
+    def __init__(self, fget, fset=None):
+        self.fget = fget
+        self.fset = fset
+
+    def __get__(self, obj, klass=None):
+        if klass is None:
+            klass = type(obj)
+        return self.fget.__get__(obj, klass)()
+
+    def __set__(self, obj, value):
+        if not self.fset:
+            raise AttributeError("can't set attribute")
+        type_ = type(obj)
+        return self.fset.__get__(obj, type_)(value)
+
+    def setter(self, func):
+        if not isinstance(func, (classmethod, staticmethod)):
+            func = classmethod(func)
+        self.fset = func
+        return self
+
+
+def classproperty(func):
+    if not isinstance(func, (classmethod, staticmethod)):
+        func = classmethod(func)
+
+    return ClassPropertyDescriptor(func)
+
+
+def is_iterable(obj: Any) -> bool:
+    """
+    Checks if the given object is iterable.
+
+    :param obj: The object that should be checked
+    :return: True if the object is iterable, False otherwise
+    """
+    try:
+        iter(obj)
+    except TypeError:
+        return False
+    return True
+
+
+def lazy_product(*iterables: Iterable) -> Iterable[Tuple]:
+    """
+    Lazily generate the cartesian product of the iterables.
+
+    :param iterables: Iterable of iterables to construct product for.
+    :return: Iterable of tuples in the cartesian product.
+    """
+
+    consumable_iterables = [iter(iterable) for iterable in iterables]
+
+    current_value = [next(consumable_iterable) for consumable_iterable in consumable_iterables]
+
+    while True:
+        yield tuple(current_value)
+
+        for index in range(len(consumable_iterables) -1, -1, -1):
+            current_iterable = consumable_iterables[index]
+            try:
+                consumable_value = next(current_iterable)
+                current_value[index] = consumable_value
+                break
+            except StopIteration as e:
+                if index == 0:
+                    return
+                consumable_iterables[index] = iter(iterables[index])
+                current_value[index] = next(consumable_iterables[index])

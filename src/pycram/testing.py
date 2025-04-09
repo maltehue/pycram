@@ -1,5 +1,6 @@
 import time
 import unittest
+from datetime import timedelta
 
 from .tasktree import task_tree
 from .datastructures.world import UseProspectionWorld
@@ -8,11 +9,11 @@ from .world_concepts.world_object import Object
 from .datastructures.pose import Pose
 from .robot_description import RobotDescription, RobotDescriptionManager
 from .process_module import ProcessModule
-from .datastructures.enums import ObjectType, WorldMode
+from .datastructures.enums import WorldMode
 from .object_descriptors.urdf import ObjectDescription
 from .ros_utils.viz_marker_publisher import VizMarkerPublisher
-from pycrap import ontology, Milk, Robot, Kitchen, Cereal
-import owlready2
+from pycrap.ontologies import Milk, Robot, Kitchen, Cereal
+
 
 class EmptyBulletWorldTestCase(unittest.TestCase):
     """
@@ -27,10 +28,10 @@ class EmptyBulletWorldTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.world = BulletWorld(mode=cls.render_mode)
-        ProcessModule.execution_delay = False
         cls.viz_marker_publisher = VizMarkerPublisher()
 
     def setUp(self):
+        task_tree.reset_tree()
         self.world.reset_world(remove_saved_states=True)
         with UseProspectionWorld():
             pass
@@ -69,8 +70,6 @@ class BulletWorldTestCase(EmptyBulletWorldTestCase):
         cls.kitchen = Object("kitchen", Kitchen, "kitchen" + cls.extension)
         cls.cereal = Object("cereal", Cereal, "breakfast_cereal.stl",
                             pose=Pose([1.3, 0.7, 0.95]))
-
-
 
 class BulletWorldGUITestCase(BulletWorldTestCase):
     render_mode = WorldMode.GUI

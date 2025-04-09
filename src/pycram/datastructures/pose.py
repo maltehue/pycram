@@ -1,21 +1,29 @@
 # used for delayed evaluation of typing until python 3.11 becomes mainstream
 from __future__ import annotations
 
-import math
 import datetime
-
-from tf.transformations import euler_from_quaternion
-from typing_extensions import List, Union, Optional, Sized, Self
+import math
+from collections.abc import Sequence
 
 import numpy as np
 import sqlalchemy.orm
-from geometry_msgs.msg import PoseStamped, TransformStamped, Vector3, Point
+import typing_extensions
 from geometry_msgs.msg import (Pose as GeoPose, Quaternion as GeoQuaternion)
-from tf import transformations
+from geometry_msgs.msg import PoseStamped, TransformStamped, Vector3, Point
+from typing_extensions import List, Union, Optional, Self, Tuple
+
+from .enums import AxisIdentifier, Grasp, Arms
+from .grasp import PreferredGraspAlignment, GraspDescription
 from ..orm.base import Pose as ORMPose, Position, Quaternion, ProcessMetaData
-from ..ros.data_types import Time
+from ..ros import Time
+from ..ros import logwarn, logerr
+from ..tf_transformations import euler_from_quaternion, translation_matrix, quaternion_matrix, concatenate_matrices, \
+    inverse_matrix, translation_from_matrix, quaternion_from_matrix, quaternion_multiply
 from ..validation.error_checkers import calculate_pose_error
-from ..ros.logging import logwarn, logerr
+from scipy.spatial.transform import Rotation as R
+
+if typing_extensions.TYPE_CHECKING:
+    from ..world_concepts.world_object import Object
 
 
 def get_normalized_quaternion(quaternion: np.ndarray) -> GeoQuaternion:
@@ -25,7 +33,7 @@ def get_normalized_quaternion(quaternion: np.ndarray) -> GeoQuaternion:
     :param quaternion: The quaternion that should be normalized
     :return: The normalized quaternion
     """
-    mag = math.sqrt(sum(v**2 for v in quaternion))
+    mag = math.sqrt(sum(v ** 2 for v in quaternion))
     normed_rotation = [f / mag for f in quaternion]
 
     geo_quaternion = GeoQuaternion()
@@ -50,7 +58,7 @@ class Pose(PoseStamped):
         Orientation: Only the quaternion as xyzw
     """
 
-    def __init__(self, position: Optional[List[float]] = None, orientation: Optional[List[float]] = None,
+    def __init__(self, position: Optional[Sequence[float]] = None, orientation: Optional[Sequence[float]] = None,
                  frame: str = "map", time: Time = None):
         """
         Poses can be initialized by a position and orientation given as lists, this is optional. By default, Poses are
@@ -89,6 +97,17 @@ class Pose(PoseStamped):
         p.pose = pose_stamped.pose
         return p
 
+    def to_pose_stamped(self) -> PoseStamped:
+        """
+        Converts this Pose to a PoseStamped message. This is useful for compatibility with ROS.
+
+        :return: A PoseStamped message with the same information as this Pose
+        """
+        return PoseStamped(
+            header=self.header,
+            pose=self.pose
+        )
+
     def get_position_diff(self, target_pose: Self) -> Point:
         """
         Get the difference between the target and the current positions.
@@ -96,8 +115,8 @@ class Pose(PoseStamped):
         :param target_pose: The target pose.
         :return: The difference between the two positions.
         """
-        return Point(target_pose.position.x - self.position.x, target_pose.position.y - self.position.y,
-                     target_pose.position.z - self.position.z)
+        return Point(x=target_pose.position.x - self.position.x, y=target_pose.position.y - self.position.y,
+                     z=target_pose.position.z - self.position.z)
 
     def get_z_angle_difference(self, target_pose: Self) -> float:
         """
@@ -141,17 +160,19 @@ class Pose(PoseStamped):
         return self.pose.position
 
     @position.setter
-    def position(self, value) -> None:
+    def position(self, value: Union[Sequence[float], GeoPose, Point]) -> None:
         """
-        Sets the position for this Pose, the position can either be a list of xyz or a geometry_msgs/Pose message.
+        Sets the position for this Pose, the position can either be a sequence of xyz, a Point
+        or a geometry_msgs/Pose message.
 
-        :param value: List or geometry_msgs/Pose message for the position
+        :param value: Sequence or geometry_msgs/Pose message for the position
         """
-        if (not isinstance(value, list) and not isinstance(value, tuple) and not isinstance(value, GeoPose)
-                and not isinstance(value, Point)):
-            logerr("Position can only be a list or geometry_msgs/Pose")
-            raise TypeError("Position can only be a list/tuple or geometry_msgs/Pose")
-        if isinstance(value, list) or isinstance(value, tuple) and len(value) == 3:
+        if not isinstance(value, (list, tuple, np.ndarray, GeoPose, Point)):
+            err_msg = "Position can only be one of (list, tuple, np.ndarray, geometry_msgs/Pose, Point) not " + \
+                      str(type(value))
+            logerr(err_msg)
+            raise TypeError(err_msg)
+        if isinstance(value, (list, tuple, np.ndarray)) and len(value) == 3:
             self.pose.position.x = value[0]
             self.pose.position.y = value[1]
             self.pose.position.z = value[2]
@@ -167,24 +188,23 @@ class Pose(PoseStamped):
         return self.pose.orientation
 
     @orientation.setter
-    def orientation(self, value) -> None:
+    def orientation(self, value: Union[Sequence[float], GeoQuaternion]) -> None:
         """
-        Sets the orientation of this Pose, the orientation can either be a list of xyzw or a geometry_msgs/Quaternion
-        message
+        Sets the orientation of this Pose, the orientation can either be a sequence of xyzw
+        or a geometry_msgs/Quaternion message
 
         :param value: New orientation, either a list or geometry_msgs/Quaternion
         """
-        if not isinstance(value, Sized) and not isinstance(value, GeoQuaternion):
-            logwarn("Orientation can only be an iterable (list, tuple, ...etc.) or a geometry_msgs/Quaternion")
-            return
+        if not isinstance(value, (list, tuple, np.ndarray, GeoQuaternion)):
+            err_msg = (f"Orientation can only be a Sequence (list, tuple, ...etc.) or a geometry_msgs/Quaternion "
+                       f"not {type(value)}")
+            logerr(err_msg)
+            raise TypeError(err_msg)
 
-        if isinstance(value, Sized) and len(value) == 4:
+        if isinstance(value, (list, tuple, np.ndarray)) and len(value) == 4:
             orientation = np.array(value)
-        elif isinstance(value, GeoQuaternion):
-            orientation = np.array([value.x, value.y, value.z, value.w])
         else:
-            logerr("Orientation has to be a list or geometry_msgs/Quaternion")
-            raise TypeError("Orientation has to be a list or geometry_msgs/Quaternion")
+            orientation = np.array([value.x, value.y, value.z, value.w])
         # This is used instead of np.linalg.norm since numpy is too slow on small arrays
         self.pose.orientation = get_normalized_quaternion(orientation)
 
@@ -289,6 +309,15 @@ class Pose(PoseStamped):
         """
         self.orientation = new_orientation
 
+    def round(self, decimals: int = 4) -> None:
+        """
+        Rounds the position and orientation of this Pose to the given number of decimals.
+
+        :param decimals: The number of decimals to which the position and orientation should be rounded
+        """
+        self.position = [round(v, decimals) for v in self.position_as_list()]
+        self.orientation = [round(v, decimals) for v in self.orientation_as_list()]
+
     def to_sql(self) -> ORMPose:
         return ORMPose(datetime.datetime.utcfromtimestamp(self.header.stamp.to_sec()), self.frame)
 
@@ -298,7 +327,7 @@ class Pose(PoseStamped):
 
         position = Position(*self.position_as_list())
         position.process_metadata = metadata
-        orientation = Quaternion(*self.orientation_as_list())
+        orientation = Quaternion(**dict(zip(["x", "y", "z", "w"], self.orientation_as_list())))
         orientation.process_metadata = metadata
         session.add(position)
         session.add(orientation)
@@ -311,22 +340,120 @@ class Pose(PoseStamped):
 
         return pose
 
-    def multiply_quaternion(self, quaternion: List) -> None:
+    def rotate_by_quaternion(self, quaternion: Tuple[float, float, float, float]) -> None:
         """
-        Multiply the quaternion of this Pose with the given quaternion, the result will be the new orientation of this
-        Pose.
+        Rotates this Pose by the given quaternion. The orientation of this Pose is multiplied by the given quaternion,
+        according to the hamilton product. The quaternion has to be given as a tuple with xyzw.
+        The orientation is normalized after the rotation.
 
-        :param quaternion: The quaternion by which the orientation of this Pose should be multiplied
+        :param quaternion: The quaternion by which this Pose should be rotated
         """
-        x1, y1, z1, w1 = quaternion
-        x2, y2, z2, w2 = self.orientation_as_list()
+        self.orientation = quaternion_multiply(self.orientation_as_list(), quaternion)
 
-        w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-        x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-        y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
-        z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+    def get_vector_to_pose(self, other_pose: Pose) -> np.ndarray:
+        """
+        Get the vector between two poses, by computing position of other_pose - position of self.
 
-        self.orientation = (x, y, z, w)
+        :param other_pose: The other pose.
+
+        :return: The vector between the two poses.
+        """
+        return np.array(other_pose.position_as_list()) - np.array(self.position_as_list())
+
+    @staticmethod
+    def calculate_closest_faces(pose_to_robot_vector: Tuple[float, float, float],
+                                specified_grasp_axis: Optional[AxisIdentifier] = None) -> Tuple[
+        GraspDescription, GraspDescription]:
+        """
+        Determines the faces of the object based on the input vector.
+
+        If `specified_grasp_axis` is None, it calculates the primary and secondary faces based on the vector's magnitude
+        determining which sides of the object are most aligned with the robot. This will either be the x, y plane for side faces
+        or the z axis for top/bottom faces.
+        If `specified_grasp_axis` is provided, it only considers the specified axis and calculates the faces aligned
+        with that axis.
+
+        :param pose_to_robot_vector: A 3D vector representing one of the robot's axes in the pose's frame, with
+                              irrelevant components set to np.nan.
+        :param specified_grasp_axis: Specifies a specific axis (e.g., X, Y, Z) to focus on.
+
+        :return: A tuple of two Grasp enums representing the primary and secondary faces.
+        """
+        all_axes = [AxisIdentifier.X, AxisIdentifier.Y, AxisIdentifier.Z]
+
+        if specified_grasp_axis:
+            valid_axes = [specified_grasp_axis]
+        else:
+            valid_axes = [axis for axis in all_axes if not np.isnan(pose_to_robot_vector[axis.value.index(1)])]
+
+        object_to_robot_vector = np.array(pose_to_robot_vector) + 1e-9
+        sorted_axes = sorted(valid_axes, key=lambda axis: abs(object_to_robot_vector[axis.value.index(1)]),
+                             reverse=True)
+
+        primary_axis = sorted_axes[0]
+        primary_sign = int(np.sign(object_to_robot_vector[primary_axis.value.index(1)]))
+        primary_face = Grasp.from_axis_direction(primary_axis, primary_sign)
+
+        if len(sorted_axes) > 1:
+            secondary_axis = sorted_axes[1]
+            secondary_sign = int(np.sign(object_to_robot_vector[secondary_axis.value.index(1)]))
+            secondary_face = Grasp.from_axis_direction(secondary_axis, secondary_sign)
+        else:
+            secondary_sign = -primary_sign
+            secondary_axis = primary_axis
+            secondary_face = Grasp.from_axis_direction(secondary_axis, secondary_sign)
+
+        return primary_face, secondary_face
+
+    def calculate_grasp_descriptions(self, robot: Object, grasp_alignment: Optional[PreferredGraspAlignment] = None) -> List[GraspDescription]:
+        """
+        This method determines the possible grasp configurations (approach axis and vertical alignment) of the self,
+        taking into account the self's orientation, position, and whether the gripper should be rotated by 90°.
+
+        :param robot: The robot for which the grasp configurations are being calculated.
+
+        :return: A sorted list of GraspDescription instances representing all grasp permutations.
+        """
+        objectTmap = self
+
+        robot_pose = robot.get_pose()
+
+        if grasp_alignment:
+            side_axis = grasp_alignment.preferred_axis
+            vertical = grasp_alignment.with_vertical_alignment
+            rotated_gripper = grasp_alignment.with_rotated_gripper
+        else:
+            side_axis, vertical, rotated_gripper = None, False, False
+
+        object_to_robot_vector_world = objectTmap.get_vector_to_pose(robot_pose)
+        orientation = objectTmap.orientation_as_list()
+
+        mapRobject = R.from_quat(orientation).as_matrix()
+        objectRmap = mapRobject.T
+
+        object_to_robot_vector_local = objectRmap.dot(object_to_robot_vector_world)
+        vector_x, vector_y, vector_z = object_to_robot_vector_local
+
+        vector_side = np.array([vector_x, vector_y, np.nan], dtype=float)
+        side_faces = self.calculate_closest_faces(vector_side, side_axis)
+
+        vector_vertical = np.array([np.nan, np.nan, vector_z], dtype=float)
+        vertical_faces = self.calculate_closest_faces(vector_vertical) if vertical else [None]
+
+        grasp_configs = [
+            GraspDescription(approach_direction=side, vertical_alignment=top_face, rotate_gripper=rotated_gripper)
+            for top_face in vertical_faces
+            for side in side_faces
+        ]
+
+        return grasp_configs
+
+    def __str__(self):
+        return (f"Pose: {[round(v, 3) for v in self.position_as_list()]}, {[round(v, 3) for v in self.orientation_as_list()]}"
+                f" in frame {self.frame}")
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Transform(TransformStamped):
@@ -342,6 +469,7 @@ class Transform(TransformStamped):
 
         Rotation: A quaternion representing the conversion of rotation between both frames
     """
+
     def __init__(self, translation: Optional[List[float]] = None, rotation: Optional[List[float]] = None,
                  frame: Optional[str] = "map", child_frame: Optional[str] = "", time: Time = None):
         """
@@ -387,8 +515,8 @@ class Transform(TransformStamped):
         """
         :return: The homogeneous matrix of this Transform
         """
-        translation = transformations.translation_matrix(self.translation_as_list())
-        rotation = transformations.quaternion_matrix(self.rotation_as_list())
+        translation = translation_matrix(self.translation_as_list())
+        rotation = quaternion_matrix(self.rotation_as_list())
         return np.dot(translation, rotation)
 
     @classmethod
@@ -446,7 +574,7 @@ class Transform(TransformStamped):
         :param value: The new value for the translation, either a list or geometry_msgs/Vector3
         """
         if not isinstance(value, list) and not isinstance(value, Vector3):
-            logwarn("Value of a translation can only be a list of a geometry_msgs/Vector3")
+            logwarn("Value of a translation can only be a list or a geometry_msgs/Vector3")
             return
         if isinstance(value, list) and len(value) == 3:
             self.transform.translation.x = value[0]
@@ -487,7 +615,8 @@ class Transform(TransformStamped):
 
         :return: A copy of this pose
         """
-        t = Transform(self.translation_as_list(), self.rotation_as_list(), self.frame, self.child_frame_id, self.header.stamp)
+        t = Transform(self.translation_as_list(), self.rotation_as_list(), self.frame, self.child_frame_id,
+                      self.header.stamp)
         t.header.frame_id = self.header.frame_id
         # t.header.stamp = self.header.stamp
         return t
@@ -519,12 +648,22 @@ class Transform(TransformStamped):
 
         :return: A new inverted Transform
         """
-        transform = transformations.concatenate_matrices(transformations.translation_matrix(self.translation_as_list()),
-                                                         transformations.quaternion_matrix(self.rotation_as_list()))
-        inverse_transform = transformations.inverse_matrix(transform)
-        translation = transformations.translation_from_matrix(inverse_transform)
-        quaternion = transformations.quaternion_from_matrix(inverse_transform)
-        return Transform(list(translation), list(quaternion), self.child_frame_id, self.header.frame_id, self.header.stamp)
+        transform = concatenate_matrices(translation_matrix(self.translation_as_list()),
+                                         quaternion_matrix(self.rotation_as_list()))
+        inverse_transform = inverse_matrix(transform)
+        translation = translation_from_matrix(inverse_transform)
+        quaternion = quaternion_from_matrix(inverse_transform)
+        return Transform(list(translation), list(quaternion), self.child_frame_id, self.header.frame_id,
+                         self.header.stamp)
+
+    def round(self, decimals: int = 4):
+        """
+        Rounds the translation and rotation of this Transform to the given number of decimals.
+
+        :param decimals: The number of decimals to which the translation and rotation should be rounded
+        """
+        self.translation = [round(v, decimals) for v in self.translation_as_list()]
+        self.rotation = [round(v, decimals) for v in self.rotation_as_list()]
 
     def __mul__(self, other: Transform) -> Union[Transform, None]:
         """
@@ -537,17 +676,17 @@ class Transform(TransformStamped):
         if not isinstance(other, Transform):
             logerr(f"Can only multiply two Transforms")
             return
-        self_trans = transformations.translation_matrix(self.translation_as_list())
-        self_rot = transformations.quaternion_matrix(self.rotation_as_list())
+        self_trans = translation_matrix(self.translation_as_list())
+        self_rot = quaternion_matrix(self.rotation_as_list())
         self_mat = np.dot(self_trans, self_rot)
 
-        other_trans = transformations.translation_matrix(other.translation_as_list())
-        other_rot = transformations.quaternion_matrix(other.rotation_as_list())
+        other_trans = translation_matrix(other.translation_as_list())
+        other_rot = quaternion_matrix(other.rotation_as_list())
         other_mat = np.dot(other_trans, other_rot)
 
         new_mat = np.dot(self_mat, other_mat)
-        new_trans = transformations.translation_from_matrix(new_mat)
-        new_rot = transformations.quaternion_from_matrix(new_mat)
+        new_trans = translation_from_matrix(new_mat)
+        new_rot = quaternion_from_matrix(new_mat)
         return Transform(list(new_trans), list(new_rot), self.frame, other.child_frame_id)
 
     def inverse_times(self, other_transform: Transform) -> Transform:
@@ -594,3 +733,47 @@ class Transform(TransformStamped):
         :param new_rotation: The new rotation as a quaternion with xyzw
         """
         self.rotation = new_rotation
+
+
+class GraspPose(Pose):
+
+    arm: Arms = None
+    """
+    The arm with which the grasp pose is attached to.
+    """
+    grasp_description: GraspDescription
+    """
+    The grasp description of the grasp.
+    """
+
+    def __init__(self, position: Optional[Sequence[float]] = None, orientation: Optional[Sequence[float]] = None,
+                 frame: str = "map", time: Time = None, arm: Arms = None, grasp_description: GraspDescription = None):
+        """
+        Poses can be initialized by a position and orientation given as lists, this is optional. By default, Poses are
+        initialized with the position being [0, 0, 0], the orientation being [0, 0, 0, 1] and the frame being 'map'.
+
+        :param position: An optional position of this Pose
+        :param orientation: An optional orientation of this Pose
+        :param frame: An optional frame in which this pose is
+        :param time: The time at which this Pose is valid, as ROS time
+        :param arm: The arm with which the grasp from this pose can be achieved
+        :param grasp_description: The grasp description which needs to be used
+        """
+        super().__init__()
+        if position is not None:
+            self.position = position
+
+        if orientation is not None:
+            self.orientation = orientation
+        else:
+            self.pose.orientation.w = 1.0
+
+        self.header.frame_id = frame
+
+        self.header.stamp = time if time else Time().now()
+
+        self.frame = frame
+
+        self.arm = arm
+
+        self.grasp_description = grasp_description

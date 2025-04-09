@@ -44,11 +44,9 @@ To initialize a {class}`~pycram.robot_description.RobotDescription` we need a fe
 
 ```python
 from pycram.robot_description import RobotDescription
-import rospkg
+from pycram.ros import get_ros_package_path
 
-rospack = rospkg.RosPack()
-filename = rospack.get_path('pycram') + '/resources/robots/' + "pr2" + '.urdf'
-
+filename = get_ros_package_path('pycram') + '/resources/robots/' + "pr2" + '.urdf'
 pr2_description = RobotDescription("pr2_example", "base_link", "torso_lift_link", "torso_lift_joint", filename)
 ```
 
@@ -146,15 +144,13 @@ pr2_description.add_camera_description(camera)
 
 ## Grasps
 
-Grasps define how a robot interacts with objects. The grasps defined in the robot description define for each grasp (
-right, left, top, front) the orientation of the end-effector, relative to the base_frame of the robot, to achieve the
-respective grasp.
+Grasps define how a robot interacts with objects. The grasps defined in the robot description are set for each end-effector
+individually. The predefined grasp used is the Grasp.FRONT grasp of the robot. Based on this grasp, all other grasps are
+generated.
 
 ```python
-pr2_description.add_grasp_orientations({Grasp.FRONT: [0, 0, 0, 1],
-                                        Grasp.LEFT: [0, 0, -1, 1],
-                                        Grasp.RIGHT: [0, 0, 1, 1],
-                                        Grasp.TOP: [0, 1, 0, 1]})
+right_gripper.update_all_grasp_orientations([0, 0, 0, 1])
+
 ```
 
 ## Register Robot Description

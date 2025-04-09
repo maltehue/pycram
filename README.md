@@ -9,6 +9,9 @@ PyCRAM is developed in Python with support for the ROS middleware which is used 
 
 This framework is tested with Ubuntu 20.04, ROS Noetic and Python 3.8
 
+## Live Demo
+**If you want to test out PyCRAM right away you can do that in the browser in our virtual research building [here](https://vib.ai.uni-bremen.de/page/fallschool/)**
+
 
 ## Simple Demonstartion
 PyCRAM allows the execution of the same high-level plan on different robot platforms. Below you can see an example of this where the plan is executed on the PR2 and the IAIs Boxy.
@@ -53,7 +56,7 @@ with simulated_robot:
     MoveTorsoAction([TorsoState.HIGH]).resolve().perform()
 
     pickup_pose = CostmapLocation(target=cereal_desig.resolve(), reachable_for=robot_desig).resolve()
-    pickup_arm = pickup_pose.reachable_arms[0]
+    pickup_arm = pickup_pose.reachable_arm
 
     NavigateAction(target_locations=[pickup_pose.pose]).resolve().perform()
 
@@ -73,7 +76,6 @@ with simulated_robot:
 
 world.exit()
 ```
-
 
 
 ## Installation
