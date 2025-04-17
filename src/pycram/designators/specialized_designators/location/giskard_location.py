@@ -1,5 +1,5 @@
-from ..tf_transformations import quaternion_from_euler
-
+#from ..tf_transformations import quaternion_from_euler
+from tf.transformations import quaternion_from_euler
 from ....datastructures.enums import StaticJointState
 from ....datastructures.pose import Pose
 from ....designators.location_designator import CostmapLocation
@@ -18,7 +18,7 @@ class GiskardLocation(CostmapLocation):
     manipulate the environment effectively.
     """
 
-    def __iter__(self) -> CostmapLocation.Location:
+    def __iter__(self) -> CostmapLocation:
         """
         Uses Giskard to perform full body ik solving to get the pose of a robot at which it is able to reach a certain point.
 

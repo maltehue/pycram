@@ -18,7 +18,7 @@ stretch_description = RobotDescription("stretch_description", "base_link", "link
 arm_description = KinematicChainDescription("arm", "link_mast", "link_wrist_roll", stretch_description.urdf_object,
                                             arm_type=Arms.RIGHT)
 
-arm_description.add_static_joint_states(StaticJointState.Park, {'joint_lift': 0.0,
+arm_description.add_static_joint_states(StaticJointState.Park, {'joint_lift': 1.1,
                                                  'joint_arm_l3': 0.0,
                                                  'joint_arm_l2': 0.0,
                                                  'joint_arm_l1': 0.0,
