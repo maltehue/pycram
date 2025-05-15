@@ -56,7 +56,7 @@ class ResolutionError(Exception):
         super(ResolutionError, self).__init__(self.message)
 
 
-class DesignatorDescription(ABC):
+class DesignatorDescription:
     """
     :ivar resolve: The specialized_designators function to use for this designator_description, defaults to self.ground
     """
@@ -124,15 +124,15 @@ class DesignatorDescription(ABC):
         return get_type_hints(cls.__init__)
 
 @dataclass
-class ActionDescription():
+class ActionDescription(HasParameters):
     """
     The performable designator_description with a single element for each list of possible parameter.
     """
-    robot_position: PoseStamped = field(init=False)
+    robot_position: Optional[PoseStamped] = field(init=False)
     """
     The position of the robot at the start of the action.
     """
-    robot_torso_height: float = field(init=False)
+    robot_torso_height: Optional[float] = field(init=False)
     """
     The torso height of the robot at the start of the action.
     """
@@ -152,13 +152,7 @@ class ActionDescription():
     """
 
     def __post_init__(self):
-        self.robot_position = World.robot.get_pose()
-        if RobotDescription.current_robot_description.torso_joint != "":
-            self.robot_torso_height = World.robot.get_joint_position(
-                RobotDescription.current_robot_description.torso_joint)
-        else:
-            self.robot_torso_height = 0.0
-        self._robot_type = World.robot.obj_type
+      self._pre_perform_callbacks.append(self._update_robot_params)
 
     def perform(self) -> Any:
         """
@@ -256,8 +250,12 @@ class ActionDescription():
     def __repr__(self):
         return self.__str__()
 
+    def _update_robot_params(self, action: ActionDescription):
+        action.robot_position = World.robot.pose
+        action.robot_torso_height = World.robot.get_joint_position(RobotDescription.current_robot_description.torso_joint)
+        action._robot_type = World.robot.obj_type
 
-class LocationDesignatorDescription(DesignatorDescription, PartialDesignator, Iterable[PoseStamped]):
+class LocationDesignatorDescription(DesignatorDescription, PartialDesignator):
     """
     Parent class of location designator_description descriptions.
     """
@@ -272,12 +270,12 @@ class LocationDesignatorDescription(DesignatorDescription, PartialDesignator, It
         raise NotImplementedError(f"{type(self)}.ground() is not implemented.")
 
 
-class ObjectDesignatorDescription(DesignatorDescription, PartialDesignator, Iterable[WorldObject]):
+class ObjectDesignatorDescription(DesignatorDescription, PartialDesignator):
     """
     Class for object designator_description descriptions.
     Descriptions hold possible parameter ranges for object designators.
     """
-    def __init__(self, names: Optional[List[str]] = None, types: Optional[List[Type[PhysicalObject]]] = None, resolution_strategy: Union[Iterable[WorldObject], Callable[WorldObject]] = None):
+    def __init__(self, names: Optional[List[str]] = None, types: Optional[List[Type[PhysicalObject]]] = None):
         """
         Base of all object designator_description descriptions. Every object designator_description has the name and type of the object.
 
