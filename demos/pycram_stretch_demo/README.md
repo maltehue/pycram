@@ -16,7 +16,7 @@ The objective of this demonstration is to showcase the Stretch robot’s ability
 1. Open a terminal window.
 2. Connect to the robot via SSH and launch Byobu:
     ```bash
-    ssh hello-robot@192.168.102.27
+    ssh hello-robot@<server-ip>
     byobu
     ```
 3. Within Byobu, open separate windows and execute the following commands (F2 to open new window, F3/F4 to navigate between windows):
@@ -56,6 +56,7 @@ The demonstration is divided into two phases:
 **Tools and Software:**  
 - Giskard
 - PyCRAM
+- RoboKudo
 
 ## 4. Challenges
 
