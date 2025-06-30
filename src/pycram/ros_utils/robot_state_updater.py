@@ -62,7 +62,12 @@ class WorldStateUpdater:
                 continue
             else:
                 tf_frame = obj.tf_frame
-            trans, rot = self.tf_listener.lookupTransform("/map", tf_frame, Time(0))
+            try:
+                trans, rot = self.tf_listener.lookupTransform("/map", tf_frame, Time(0))
+            except Exception as e:
+                print(e)
+                continue
+
             obj.set_pose(PoseStamped.from_list(trans, rot))
 
     def _subscribe_joint_state(self, msg: JointState) -> None:

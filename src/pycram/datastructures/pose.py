@@ -18,6 +18,7 @@ from ..has_parameters import has_parameters, HasParameters
 from ..ros import Time as ROSTime
 from ..tf_transformations import quaternion_multiply, translation_matrix, quaternion_matrix, inverse_matrix, \
     translation_from_matrix, quaternion_from_matrix
+from std_msgs.msg import Header
 
 if TYPE_CHECKING:
     from ..world_concepts.world_object import Object

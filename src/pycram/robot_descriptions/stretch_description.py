@@ -18,11 +18,11 @@ stretch_description = RobotDescription("stretch_description", "base_link", "link
 arm_description = KinematicChainDescription("arm", "link_mast", "link_wrist_roll", stretch_description.urdf_object,
                                             arm_type=Arms.RIGHT)
 
-arm_description.add_static_joint_states(StaticJointState.Park, {'joint_lift': 1.1,
-                                                 'joint_arm_l3': 0.0,
-                                                 'joint_arm_l2': 0.0,
-                                                 'joint_arm_l1': 0.0,
-                                                 'joint_arm_l0': 0.0,
+arm_description.add_static_joint_states(StaticJointState.Park, {'joint_lift': 1.05,
+                                                 'joint_arm_l3': 0.02,
+                                                 'joint_arm_l2': 0.02,
+                                                 'joint_arm_l1': 0.02,
+                                                 'joint_arm_l0': 0.02,
                                                  'joint_wrist_yaw': 0.0,
                                                  'joint_wrist_pitch': 0.0,
                                                  'joint_wrist_roll': 0.0})
@@ -73,7 +73,7 @@ stretch_description.add_camera_description(realsense_infra2)
 
 ################################## Grasps ##################################
 gripper_description.update_all_grasp_orientations([0, 0, 0, 1])
-
+gripper_description.set_approach_axis([1, 0, 0])
 ################################### Custom Orientation Generator ##############
 def stretch_orientation_generator(position, origin):
     angle = np.arctan2(position[1] - origin.position.y, position[0] - origin.position.x) + np.pi + np.pi / 16

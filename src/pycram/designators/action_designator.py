@@ -341,16 +341,24 @@ class ReachToPickUpAction(ActionDescription):
 
         target_pose = self.object_designator.get_grasp_pose(self.end_effector, self.grasp_description)
         target_pose.rotate_by_quaternion(self.end_effector.grasps[self.grasp_description])
-
+        print(f"Target pose: {target_pose}")
         target_pre_pose = LocalTransformer().translate_pose_along_local_axis(target_pose,
                                                                              self.end_effector.get_approach_axis(),
-                                                                             -self.object_designator.get_approach_offset())
+                                                                             -self.object_designator.get_approach_offset()-0.05)
+
+        print(f"Target pre pose: {target_pre_pose}")
 
         MoveGripperMotion(motion=GripperState.OPEN, gripper=self.arm).perform()
 
         self.move_gripper_to_pose(target_pre_pose)
+        MoveJointsMotion(["joint_arm_l0", "joint_arm_l1", "joint_arm_l2","joint_arm_l3"], [0.1, 0.1,0.1,0.05]).perform()
 
-        self.move_gripper_to_pose(target_pose, MovementType.STRAIGHT_CARTESIAN)
+        # self.move_gripper_to_pose(target_pre_pose)
+
+        # target_pose = LocalTransformer().translate_pose_along_local_axis(target_pose,
+        #                                                                  self.end_effector.get_approach_axis(),
+        #                                                                  0.05)
+        # self.move_gripper_to_pose(target_pose, MovementType.STRAIGHT_CARTESIAN)
 
         # Remove the vis axis from the world if it was added
         World.current_world.remove_vis_axis()
@@ -450,15 +458,20 @@ class PickUpAction(ActionDescription):
         tool_frame = RobotDescription.current_robot_description.get_arm_chain(self.arm).get_tool_frame()
         World.robot.attach(self.object_designator, tool_frame)
 
-        self.lift_object(distance=0.1)
+        self.lift_object()
 
         # Remove the vis axis from the world
         World.current_world.remove_vis_axis()
 
     def lift_object(self, distance: float = 0.1):
-        lift_to_pose = self.gripper_pose()
-        lift_to_pose.pose.position.z += distance
-        MoveTCPMotion(lift_to_pose, self.arm, allow_gripper_collision=True).perform()
+        # doing this because stretch does tries to go backwards , and it will hit the wall
+        MoveJointsMotion(["joint_lift"], [1.03]).perform()
+
+
+        # lift_to_pose = self.gripper_pose()
+        # lift_to_pose.pose.position.z += distance
+
+        # MoveTCPMotion(lift_to_pose, self.arm, allow_gripper_collision=True).perform()
 
     def gripper_pose(self) -> PoseStamped:
         """

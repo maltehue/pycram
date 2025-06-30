@@ -78,15 +78,15 @@ class LocalTransformer(TransformManager):
         :param target_frame: The name of the target frame
         :return: The transformed PoseStamped in target frame
         """
-        objects = list(filter(None, map(self.get_object_from_frame, [pose.frame_id, target_frame])))
+        objects = list(filter(None, map(self.get_object_from_frame, [pose.header.frame_id, target_frame])))
         self.update_transforms_for_objects(objects)
 
         source_frame = pose.header.frame_id
 
-        if not isinstance(pose.orientation, list):
-            wxyz = self.xyzw_to_wxyz(pose.orientation.to_list())
+        if not isinstance(pose.pose.orientation, list):
+            wxyz = self.xyzw_to_wxyz(pose.pose.orientation.to_list())
         else:
-            wxyz = self.xyzw_to_wxyz(pose.orientation)
+            wxyz = self.xyzw_to_wxyz(pose.pose.orientation)
         pose_matrix = transform_from_pq(np.hstack((np.array(pose.pose.position.to_list()),
                                                    np.array(wxyz))))
 

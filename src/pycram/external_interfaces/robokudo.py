@@ -11,7 +11,7 @@ from typing_extensions import List, Callable, Optional
 
 from ..datastructures.pose import PoseStamped
 from ..designator import ObjectDesignatorDescription
-
+from pycram.datastructures.dataclasses import Color
 robokudo_found = False
 try:
     from robokudo_msgs.msg import ObjectDesignator as robokudo_ObjectDesignator
@@ -90,7 +90,7 @@ def init_robokudo_interface(func: Callable) -> Callable:
 
 @init_robokudo_interface
 def send_query(obj_type: Optional[str] = None, region: Optional[str] = None,
-               attributes: Optional[List[str]] = None) -> Any:
+               attributes: Optional[List[str]] = None, colors: Optional[List[str]] = None) -> Any:
     """Generic function to send a query to RoboKudo."""
 
     global client
@@ -102,8 +102,10 @@ def send_query(obj_type: Optional[str] = None, region: Optional[str] = None,
         goal.obj.location = region
     if attributes:
         goal.obj.attribute = attributes
-    color=["yellow"]
-    goal.obj.color = color
+
+    goal.obj.color = colors
+    #color=["blue"]
+    #goal.obj.color = color
     query_result = None
 
     def done_callback(state, result):
@@ -134,13 +136,21 @@ def query_all_objects() -> dict:
 
 
 @init_robokudo_interface
-def query_object(obj_desc: ObjectDesignatorDescription) -> dict:
+def query_object(obj_desc: ObjectDesignatorDescription,color) -> dict:
     """Query RoboKudo for an object that fits the description."""
     goal = QueryGoal()
     goal.obj.type = str(obj_desc.types[0])
 
-    result = send_query(obj_type=goal.obj.type)
 
+    if color == Color(R=0.0, G=0.0, B=1.0, A=1.0):
+        result = send_query(obj_type=goal.obj.type, colors=["blue"])
+    elif color==Color(R=1.0, G=1.0, B=0.0, A=1.0):
+        result = send_query(obj_type=goal.obj.type,colors=["yellow"])
+    elif color==Color(R=1.0, G=0.0, B=0.0, A=1.0):
+        result = send_query(obj_type=goal.obj.type, colors=["red"])
+    else:
+        print("no color was giving,using blue as default color")
+        result = send_query(obj_type=goal.obj.type, colors=["blue"])
     return result
 
 
