@@ -8,7 +8,7 @@ from ..ros import logwarn, loginfo_once
 from ..ros import get_node_names
 
 from ..datastructures.enums import JointType, ObjectType, Arms
-from ..datastructures.pose import PoseStamped
+# from ..datastructures.pose import PoseStamped
 from ..datastructures.world import World
 from ..datastructures.dataclasses import MeshVisualShape
 from ..ros import get_service_proxy
@@ -203,7 +203,12 @@ def spawn_urdf(name: str, urdf_path: str, pose: PoseStamped) -> 'UpdateWorldResp
     urdf_string = ""
     with open(urdf_path) as f:
         urdf_string = f.read()
-
+    print(type(pose))
+    pose = _pose_to_pose_stamped(pose)
+    print(type(pose))
+    print("this is pose : ",pose.header.stamp)
+    if not isinstance(pose, PoseStamped):
+        raise TypeError("Pose must be a PoseStamped")
     return giskard_wrapper.add_urdf(name, urdf_string, pose)
 
 

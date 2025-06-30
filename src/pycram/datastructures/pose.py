@@ -345,7 +345,7 @@ class Header:
     """
     frame_id: str = "map"
     stamp: datetime.datetime = field(default_factory=datetime.datetime.now, compare=False)
-    sequence: int = field(default=0, compare=False)
+    seq: int = field(default=0, compare=False)
 
     def ros_message(self) -> ROSHeader:
         """
@@ -356,7 +356,7 @@ class Header:
         from std_msgs.msg import Header as ROSHeader
         split_time = str(self.stamp.timestamp()).split(".")
         stamp = ROSTime(int(split_time[0]), int(split_time[1]))
-        return ROSHeader(frame_id=self.frame_id, stamp=stamp, seq=self.sequence)
+        return ROSHeader(frame_id=self.frame_id, stamp=stamp, seq=self.seq)
 
 
 @has_parameters

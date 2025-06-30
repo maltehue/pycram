@@ -346,6 +346,7 @@ class Object(PhysicalBody, HasParameters):
         """
         The current pose of the object.
         """
+       # print(f"The current pose of the object is {self.world.get_object_pose(self)} and the type is {type(self.world.get_object_pose(self))}")
         return self.world.get_object_pose(self)
 
     @pose.setter

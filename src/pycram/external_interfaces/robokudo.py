@@ -102,7 +102,8 @@ def send_query(obj_type: Optional[str] = None, region: Optional[str] = None,
         goal.obj.location = region
     if attributes:
         goal.obj.attribute = attributes
-
+    color=["yellow"]
+    goal.obj.color = color
     query_result = None
 
     def done_callback(state, result):

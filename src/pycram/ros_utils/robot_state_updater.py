@@ -86,4 +86,3 @@ class WorldStateUpdater:
         """
         self.tf_timer.shutdown()
         self.joint_state_timer.shutdown()
-

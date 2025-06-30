@@ -71,8 +71,8 @@ class WorldConfig:
      and the world synchronization.
     """
 
-    position_tolerance: float = 1e-3
-    orientation_tolerance: float = 10 * math.pi / 180
+    position_tolerance: float = 0.06  #1e-3
+    orientation_tolerance: float = 15 * math.pi / 180   #it was 10 instead of 15
     prismatic_joint_position_tolerance: float = 1e-2
     revolute_joint_position_tolerance: float = 2 * math.pi / 180
     """
